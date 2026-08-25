@@ -176,17 +176,22 @@ export class TwinWorld {
       const ticks = Math.max(1, Math.min(5, Math.round(elapsedMs / periodMs)));
       carry = elapsedMs - ticks * periodMs;
       if (carry < -periodMs) carry = -periodMs;
-      this.session.advance(ticks);
-      const tS = this.session.time();
-      for (const hook of this.tickHooks) {
-        try {
-          hook(tS);
-        } catch (error) {
-          console.error('[twin-world] tick hook failed:', error);
-        }
-      }
-      this.flushTruth();
+      this.advanceTicks(ticks);
     }, periodMs);
+  }
+
+  /** One deterministic step of the server loop: advance, hooks, truth flush. */
+  advanceTicks(ticks: number): void {
+    this.session.advance(ticks);
+    const tS = this.session.time();
+    for (const hook of this.tickHooks) {
+      try {
+        hook(tS);
+      } catch (error) {
+        console.error('[twin-world] tick hook failed:', error);
+      }
+    }
+    this.flushTruth();
   }
 
   stop(): void {

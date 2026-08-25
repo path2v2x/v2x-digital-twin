@@ -77,7 +77,7 @@ export class Publisher {
         object_type: track.objectType,
         lat: record.gps_location?.latitude ?? gps?.lat ?? null,
         lon: record.gps_location?.longitude ?? gps?.lon ?? null,
-        confidence: record.confidence ?? null,
+        confidence: record.confidence ?? record.confidence_score ?? null,
         street_name: record.street_name ?? null,
         timestamp_utc: record.timestamp_utc ?? null,
         snapshot_url: null,

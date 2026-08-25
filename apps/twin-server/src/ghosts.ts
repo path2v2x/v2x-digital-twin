@@ -30,6 +30,7 @@ export interface DetectionRecord {
   readonly object_type?: string;
   readonly gps_location?: { readonly latitude?: number; readonly longitude?: number };
   readonly confidence?: number;
+  readonly confidence_score?: number;
   readonly timestamp_utc?: string;
   readonly event_id?: string;
   readonly media_timestamp_utc?: string;
