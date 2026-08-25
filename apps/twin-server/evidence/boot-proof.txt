@@ -1,0 +1,13 @@
+# Boot proof at 2026-08-25T13:37:23-07:00
+
+$ pgrep -af "CarlaUE4|CarlaUnreal|CarlaServer|[Cc]arla\\.sh|scenario_runner"  # actual CARLA binaries
+3065743 bash /home/path/V2XCarla/v2x-backend/scripts/wait-for-carla.sh
+
+$ pgrep -af python | grep -i carla   # no python bridge attached to CARLA
+(none)
+
+Note: pgrep -fi carla also matches our own processes because the repo path contains "V2XCarla", and a leftover wait-for-carla.sh poll loop (waits for a CARLA that never runs; owned by legacy scripts/, untouched this wave).
+
+$ ss -ltnp | grep -E "8765|8090"   # twin-server owns both ports
+LISTEN 0      511                              *:8090             *:*    users:(("node",pid=3060956,fd=30))           
+LISTEN 0      511                              *:8765             *:*    users:(("node",pid=3060956,fd=25))           

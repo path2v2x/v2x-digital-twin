@@ -1,0 +1,134 @@
+{"at":"2026-08-25T20:37:03.094Z","tx":{"type":"server_status"}}
+{"at":"2026-08-25T20:37:03.095Z","rx":{"type":"server_status","active_sessions":0,"this_session_active":false}}
+{"at":"2026-08-25T20:37:03.095Z","note":"PASS server_status round-trip"}
+{"at":"2026-08-25T20:37:03.095Z","tx":{"type":"list_maps"}}
+{"at":"2026-08-25T20:37:03.095Z","rx":{"type":"map_status","current_map":"richmond-field-station","maps":["richmond-field-station"],"mapId":"richmond-field-station","xodrSha256":"80704cd1bc2563a63d5d365a5b0c43936222cef811f513e89129a8205e464643"}}
+{"at":"2026-08-25T20:37:03.095Z","note":"PASS list_maps names richmond-field-station"}
+{"at":"2026-08-25T20:37:03.095Z","tx":{"type":"start_session","start":"2026-04-10T18:56:00Z","end":"2026-04-10T19:00:00Z","vehicle":"vehicle.tesla.model3"}}
+{"at":"2026-08-25T20:37:03.189Z","rx":{"type":"session_ready","vehicle_id":"ws:0008","objects_count":0,"sensor_actor_ids":[],"scene_actor_ids":[],"owned_actor_ids":["ws:0008"]}}
+{"at":"2026-08-25T20:37:03.189Z","note":"PASS session_ready"}
+{"at":"2026-08-25T20:37:03.189Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.192Z","rx":{"type":"telemetry","speed":0.3,"gear":1,"pos":[-164.59,4.93,0],"rot":[0,-108.96,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.292Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.293Z","rx":{"type":"telemetry","speed":1,"gear":1,"pos":[-164.61,4.92,0],"rot":[0,-109.44,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.393Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.394Z","rx":{"type":"telemetry","speed":1.8,"gear":1,"pos":[-164.63,4.88,0],"rot":[0,-109.63,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.494Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.494Z","rx":{"type":"telemetry","speed":3,"gear":1,"pos":[-164.65,4.82,0],"rot":[0,-109.72,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.594Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.595Z","rx":{"type":"telemetry","speed":4.2,"gear":1,"pos":[-164.69,4.73,0],"rot":[0,-109.76,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.695Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.696Z","rx":{"type":"telemetry","speed":5.5,"gear":1,"pos":[-164.73,4.6,0],"rot":[0,-109.79,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.795Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.796Z","rx":{"type":"telemetry","speed":6.8,"gear":1,"pos":[-164.79,4.44,0],"rot":[0,-109.8,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.897Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.897Z","rx":{"type":"telemetry","speed":8.1,"gear":1,"pos":[-164.86,4.25,0],"rot":[0,-109.81,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:03.997Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:03.998Z","rx":{"type":"telemetry","speed":9.3,"gear":1,"pos":[-164.94,4.02,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.099Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.099Z","rx":{"type":"telemetry","speed":10.6,"gear":1,"pos":[-165.04,3.76,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.200Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.200Z","rx":{"type":"telemetry","speed":11.9,"gear":1,"pos":[-165.14,3.47,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.300Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.301Z","rx":{"type":"telemetry","speed":13.2,"gear":1,"pos":[-165.26,3.14,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.401Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.402Z","rx":{"type":"telemetry","speed":14.4,"gear":1,"pos":[-165.39,2.78,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.503Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.503Z","rx":{"type":"telemetry","speed":15.7,"gear":1,"pos":[-165.53,2.38,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.604Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.605Z","rx":{"type":"telemetry","speed":17,"gear":1,"pos":[-165.69,1.96,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.704Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.704Z","rx":{"type":"telemetry","speed":18.3,"gear":1,"pos":[-165.85,1.5,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.804Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.805Z","rx":{"type":"telemetry","speed":19.5,"gear":1,"pos":[-166.03,1,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:04.905Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:04.906Z","rx":{"type":"telemetry","speed":20.8,"gear":1,"pos":[-166.22,0.47,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:05.007Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:05.008Z","rx":{"type":"telemetry","speed":22.1,"gear":1,"pos":[-166.42,-0.09,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:05.108Z","tx":{"type":"control","s":0,"t":1,"b":0}}
+{"at":"2026-08-25T20:37:05.109Z","rx":{"type":"telemetry","speed":23.4,"gear":1,"pos":[-166.64,-0.68,0],"rot":[0,-109.82,0],"steer":0,"throttle":1,"brake":0,"nearby_actors":[],"dynamic_actors":[],"detections":[]}}
+{"at":"2026-08-25T20:37:05.209Z","note":"PASS telemetry round-trip"}
+{"at":"2026-08-25T20:37:05.209Z","note":"PASS driving accelerates (speed=23.4 km/h after 2 s)"}
+{"at":"2026-08-25T20:37:05.209Z","note":"PASS telemetry.detections present"}
+{"at":"2026-08-25T20:37:05.209Z","tx":{"type":"sync_v2x_zones","zones":[{"id":"smoke-zone","name":"Smoke Zone","message":"Smoke zone entered","zone_kind":"polygon","signal_type":"warning","polygon":[[-122.33554788422626,37.91536473057719],[-122.33486469056191,37.91536473057719],[-122.33486469056191,37.91482574387219],[-122.33554788422626,37.91482574387219]],"color":"#f00"}]}}
+{"at":"2026-08-25T20:37:05.210Z","rx":{"type":"v2x_zones_synced","drawn":1}}
+{"at":"2026-08-25T20:37:05.210Z","note":"PASS sync_v2x_zones drawn=1"}
+{"at":"2026-08-25T20:37:05.210Z","tx":{"type":"control","s":0,"t":0,"b":1}}
+{"at":"2026-08-25T20:37:05.210Z","rx":{"type":"telemetry","speed":24.6,"gear":1,"pos":[-166.86,-1.31,0],"rot":[0,-109.82,0],"steer":0,"throttle":0,"brake":1,"nearby_actors":[],"dynamic_actors":[],"detections":[],"v2x_alerts":[{"id":"zone:smoke-zone","message":"Smoke zone entered","signal_type":"warning","distance":0}]}}
+{"at":"2026-08-25T20:37:05.210Z","note":"PASS zone entry raises v2x_alert"}
+{"at":"2026-08-25T20:37:05.210Z","tx":{"type":"list_scenarios"}}
+{"at":"2026-08-25T20:37:05.211Z","rx":{"type":"scenario_list","scenarios":[{"file":"firetruck-from-north.template.json","name":"EVA firetruck from the north — migrated from firetruck_from_north.xosc","description":"V2XCarla EVA pull-over choreography, re-expressed natively on SimForge. A firetruck approaches the RFS intersection from the north on road 18 lane +1 at 30 km/h and drives through it toward a goal on road 45 lane +1. The ego sits on the same lane between spawn and intersection (externally controlled in the drive session; stationary here) so the truck must approach it from behind. Original semantics preserved: BasicAgent route-following with obstacle yield becomes the engine's collision-avoiding customRoute follower; AcquirePositionAction becomes a t=0.5s route interaction; the 120 s storyboard safety timeout becomes clipSeconds; the collision evaluation criterion becomes the engine's contact guard. Weather ClearNoon maps to clear/noon.","kind":"template"},{"file":"firetruck-from-south.template.json","name":"EVA firetruck from the south — migrated from firetruck_from_south.xosc","description":"V2XCarla EVA pull-over choreography, re-expressed natively on SimForge. A firetruck approaches the RFS intersection from the south on road 26 lane +1 at 30 km/h and drives through it toward a goal on the north-west leg. The ego sits on the same lane between spawn and intersection (externally controlled in the drive session; stationary here) so the truck must approach it from behind. Original semantics preserved: BasicAgent route-following with obstacle yield becomes the engine's collision-avoiding customRoute follower; AcquirePositionAction becomes a t=0.5s route interaction; the 120 s storyboard safety timeout becomes clipSeconds; the collision evaluation criterion becomes the engine's contact guard. Weather ClearNoon maps to clear/noon.","kind":"template"},{"file":"sample-npc-cruise.template.json","name":"NPC follower cruise — migrated from sample.xosc","description":"V2XCarla sample scenario, re-expressed natively on SimForge. One NPC spawns at RFS spawn point #3 (78.9, -91.1) at rest, holds still for 1 s (xosc StartTrigger SimulationTimeCondition 1.0), then accelerates linearly to 12 m/s over 3 s (SpeedAction dynamics linear 3.0 s) and cruises for the remainder of the 30 s clip. The ego is external_control in the xosc — the drive session supplies it, so it is not authored here; the bridge's live session attaches exactly as ScenarioRunner did. Weather ClearNoon maps to clear/noon; the 30 s storyboard StopTrigger becomes clipSeconds.","kind":"template"}]}}
+{"at":"2026-08-25T20:37:05.211Z","note":"PASS scenario_list has 3 entries (>=3 templates)"}
+{"at":"2026-08-25T20:37:05.211Z","tx":{"type":"load_scenario","file":"firetruck-from-south.template.json"}}
+{"at":"2026-08-25T20:37:05.310Z","rx":{"type":"scenario_loaded","name":"EVA firetruck from the south — migrated from firetruck_from_south.xosc","file":"firetruck-from-south.template.json","zones":[],"spawned":1,"failed":0,"placed_count":0}}
+{"at":"2026-08-25T20:37:05.311Z","note":"PASS firetruck template spawns"}
+{"at":"2026-08-25T20:37:05.311Z","tx":{"type":"spawn_traffic","preset":"light"}}
+{"at":"2026-08-25T20:37:05.412Z","rx":{"type":"traffic_spawned","preset":"light","count":1}}
+{"at":"2026-08-25T20:37:05.412Z","note":"PASS traffic light preset spawns 1"}
+{"at":"2026-08-25T20:37:05.412Z","tx":{"type":"despawn_traffic"}}
+{"at":"2026-08-25T20:37:05.492Z","rx":{"type":"traffic_despawned","count":1}}
+{"at":"2026-08-25T20:37:05.493Z","note":"PASS despawn_traffic destroys"}
+{"at":"2026-08-25T20:37:05.493Z","tx":{"type":"set_weather","params":{"fog_density":80,"precipitation":30}}}
+{"at":"2026-08-25T20:37:05.493Z","rx":{"type":"weather_set","params":{"cloudiness":0,"precipitation":30,"precipitation_deposits":0,"wind_intensity":30,"sun_azimuth_angle":180,"sun_altitude_angle":75,"fog_density":25,"fog_distance":100000,"fog_falloff":0.1,"wetness":0,"scattering_intensity":1,"mie_scattering_scale":0.03,"rayleigh_scattering_scale":0.0331,"dust_storm":0},"applied":{"timeOfDay":"noon","weather":"fog"}}}
+{"at":"2026-08-25T20:37:05.493Z","note":"PASS weather clamped to safe limits (fog 80→25)"}
+{"at":"2026-08-25T20:37:05.493Z","tx":{"type":"list_trajectories"}}
+{"at":"2026-08-25T20:37:05.494Z","rx":{"type":"trajectory_list","trajectories":[{"file":"event1.json","waypoints":36,"duration":14.33}],"status":{"active":false}}}
+{"at":"2026-08-25T20:37:05.494Z","note":"PASS trajectory list has event1.json"}
+{"at":"2026-08-25T20:37:05.494Z","tx":{"type":"start_trajectory","file":"event1.json"}}
+{"at":"2026-08-25T20:37:05.606Z","rx":{"type":"trajectory_started","vehicle_id":"ws:0011","duration":14.33,"waypoints":36,"name":"event1.json"}}
+{"at":"2026-08-25T20:37:05.606Z","note":"PASS trajectory started (36 wp, 14.33 s)"}
+{"at":"2026-08-25T20:37:07.106Z","tx":{"type":"trajectory_status"}}
+{"at":"2026-08-25T20:37:07.107Z","rx":{"type":"trajectory_status","active":true,"name":"event1.json","elapsed":1.6,"duration":14.33,"vehicle_id":"ws:0011","finished":false}}
+{"at":"2026-08-25T20:37:07.107Z","note":"PASS trajectory clock advances"}
+{"at":"2026-08-25T20:37:07.107Z","tx":{"type":"stop_trajectory"}}
+{"at":"2026-08-25T20:37:07.242Z","rx":{"type":"trajectory_stopped","stopped":true}}
+{"at":"2026-08-25T20:37:07.242Z","tx":{"type":"spawn_object","blueprint":"static.prop.constructioncone","offset":10}}
+{"at":"2026-08-25T20:37:07.357Z","rx":{"type":"object_spawned","actor_id":"ws:0012","blueprint":"static.prop.constructioncone","pos":[-173.3,-19.88,0],"placed_count":1}}
+{"at":"2026-08-25T20:37:07.357Z","note":"PASS spawn_object"}
+{"at":"2026-08-25T20:37:07.357Z","tx":{"type":"undo_place"}}
+{"at":"2026-08-25T20:37:07.472Z","rx":{"type":"object_removed","blueprint":"static.prop.constructioncone","pos":[-173.3,-19.88,0],"placed_count":0}}
+{"at":"2026-08-25T20:37:07.472Z","note":"PASS undo_place"}
+{"at":"2026-08-25T20:37:07.472Z","tx":{"type":"teleport","request_id":"smoke-1","x":-126.63999999999999,"y":39.32}}
+{"at":"2026-08-25T20:37:07.760Z","rx":{"type":"teleported","success":true,"request_id":"smoke-1","pos":[-126.7,39.3,0],"yaw":-111.17,"snapped_to_road":true,"vehicle_id":"ws:0013"}}
+{"at":"2026-08-25T20:37:07.760Z","note":"PASS teleport succeeds near road"}
+{"at":"2026-08-25T20:37:07.760Z","note":"PASS teleport reallocates vehicle_id"}
+{"at":"2026-08-25T20:37:07.760Z","tx":{"type":"respawn"}}
+{"at":"2026-08-25T20:37:08.069Z","rx":{"type":"respawned","pos":[114.22,-272.42,0],"vehicle_id":"ws:0014"}}
+{"at":"2026-08-25T20:37:08.069Z","note":"PASS respawn"}
+{"at":"2026-08-25T20:37:08.369Z","note":"PASS truth_frame relay on /drive (106 frames)"}
+{"at":"2026-08-25T20:37:08.370Z","note":"last truth frame tick=2302 actors=[ws:0009:truck,ws:0014:car]"}
+{"at":"2026-08-25T20:37:08.370Z","tx":{"type":"end_session"}}
+{"at":"2026-08-25T20:37:08.622Z","rx":{"type":"session_ended"}}
+{"at":"2026-08-25T20:37:08.622Z","note":"PASS end_session"}
+{"at":"2026-08-25T20:37:08.626Z","rx":{"type":"twin_hello","camera_id":"ch2","camera_model":{"id":"ch2","device_id":"cam-001-ch2","stream":"v2x-backend-cam-ch2","height_m":7,"pitch_deg":-40.52,"yaw_deg":71.25,"heading_deg":300,"intrinsics":{"fx":1325.4,"fy":1325.4,"cx":1280,"cy":960,"width":2560,"height":1920},"twin_pose":{"yaw_offset_deg":5.74,"pitch_offset_deg":15.49,"height_offset_m":1.48,"forward_offset_m":0.5},"stream_url":"http://127.0.0.1:8090/streams/ch2.mjpg"},"width":2560,"height":1920,"fps":20,"cameras":["ch1","ch2","ch3","ch4"],"rig":{"width":2560,"height":1920,"fps":20,"cameras":["ch1","ch2","ch3","ch4"]},"sync":{"tracks":0,"actors":0,"poll_failures":0,"detections_url":"http://127.0.0.1:8090/detections/latest","mode":"live","replay_supported":true,"replay_clock":null,"objects":[]}}}
+{"at":"2026-08-25T20:37:08.626Z","rx":{"type":"twin_cameras","mapId":"richmond-field-station","xodrSha256":"80704cd1bc2563a63d5d365a5b0c43936222cef811f513e89129a8205e464643","site":{"lat":37.91560117034595,"lon":-122.33478756387032,"name":"Richmond Field Station"},"cameras":[{"id":"ch1","device_id":"cam-001-ch1","stream":"v2x-backend-cam-ch1","height_m":7,"pitch_deg":-39.2,"yaw_deg":-46.06,"heading_deg":200,"intrinsics":{"fx":1325.4,"fy":1325.4,"cx":1280,"cy":960,"width":2560,"height":1920},"twin_pose":{"yaw_offset_deg":0,"pitch_offset_deg":0,"height_offset_m":0,"forward_offset_m":0.5},"stream_url":"http://127.0.0.1:8090/streams/ch1.mjpg"},{"id":"ch2","device_id":"cam-001-ch2","stream":"v2x-backend-cam-ch2","height_m":7,"pitch_deg":-40.52,"yaw_deg":71.25,"heading_deg":300,"intrinsics":{"fx":1325.4,"fy":1325.4,"cx":1280,"cy":960,"width":2560,"height":1920},"twin_pose":{"yaw_offset_deg":5.74,"pitch_offset_deg":15.49,"height_offset_m":1.48,"forward_offset_m":0.5},"stream_url":"http://127.0.0.1:8090/streams/ch2.mjpg"},{"id":"ch3","device_id":"cam-001-ch3","stream":"v2x-backend-cam-ch3","height_m":7,"pitch_deg":-30.42,"yaw_deg":14.58,"heading_deg":315,"intrinsics":{"fx":1325.4,"fy":1325.4,"cx":1280,"cy":960,"width":2560,"height":1920},"twin_pose":{"yaw_offset_deg":0.08,"pitch_offset_deg":0.26,"height_offset_m":-0.04,"forward_offset_m":1.5},"stream_url":"http://127.0.0.1:8090/streams/ch3.mjpg"},{"id":"ch4","device_id":"cam-001-ch4","stream":"v2x-backend-cam-ch4","height_m":7,"pitch_deg":-43.48,"yaw_deg":-22.63,"heading_deg":260,"intrinsics":{"fx":1325.4,"fy":1325.4,"cx":1280,"cy":960,"width":2560,"height":1920},"twin_pose":{"yaw_offset_deg":-2.16,"pitch_offset_deg":4.95,"height_offset_m":-0.61,"forward_offset_m":0.5},"stream_url":"http://127.0.0.1:8090/streams/ch4.mjpg"}]}}
+{"at":"2026-08-25T20:37:09.126Z","note":"PASS twin_hello with camera_id"}
+{"at":"2026-08-25T20:37:09.126Z","note":"PASS twin_cameras sent on connect"}
+{"at":"2026-08-25T20:37:09.126Z","note":"PASS twin_cameras: 4 cameras with stream URLs"}
+{"at":"2026-08-25T20:37:09.126Z","note":"PASS twin_cameras pins xodrSha256"}
+{"at":"2026-08-25T20:37:09.126Z","tx":{"type":"twin_status"}}
+{"at":"2026-08-25T20:37:09.127Z","rx":{"type":"twin_mode","mode":"live","replay_supported":true,"replay_clock":null,"tracks":0,"actors":0,"objects":[]}}
+{"at":"2026-08-25T20:37:09.127Z","note":"PASS twin_status → twin_mode live"}
+{"at":"2026-08-25T20:37:09.127Z","tx":{"type":"twin_replay","start":"2026-08-25T19:37:09.127Z","speed":2}}
+{"at":"2026-08-25T20:37:09.127Z","rx":{"type":"twin_mode","mode":"replay","replay_supported":true,"replay_clock":"2026-08-25T19:37:09.127Z","tracks":0}}
+{"at":"2026-08-25T20:37:09.127Z","note":"PASS twin_replay enters replay mode"}
+{"at":"2026-08-25T20:37:09.626Z","rx":{"type":"twin_clock","mode":"replay","replay_supported":true,"replay_clock":"2026-08-25T19:37:10.123Z","tracks":0}}
+{"at":"2026-08-25T20:37:10.328Z","note":"PASS twin_clock ticks"}
+{"at":"2026-08-25T20:37:10.328Z","tx":{"type":"twin_live"}}
+{"at":"2026-08-25T20:37:10.328Z","rx":{"type":"twin_mode","mode":"live","replay_supported":true,"replay_clock":null,"tracks":0}}
+{"at":"2026-08-25T20:37:10.328Z","note":"PASS twin_live returns to live"}
+{"at":"2026-08-25T20:37:10.626Z","rx":{"type":"twin_clock","mode":"live","replay_supported":true,"replay_clock":null,"tracks":0}}
+{"at":"2026-08-25T20:37:10.631Z","note":"PASS truth_frame relay on /twin (40 frames)"}
+{"at":"2026-08-25T20:37:10.729Z","note":"PASS ch1 MJPEG 200"}
+{"at":"2026-08-25T20:37:10.729Z","note":"PASS ch1 multipart content-type"}
+{"at":"2026-08-25T20:37:10.732Z","note":"PASS ch1 streams JPEG bytes (20707)"}
+{"at":"2026-08-25T20:37:10.826Z","note":"PASS ch2 MJPEG 200"}
+{"at":"2026-08-25T20:37:10.826Z","note":"PASS ch2 multipart content-type"}
+{"at":"2026-08-25T20:37:10.827Z","note":"PASS ch2 streams JPEG bytes (20669)"}
+{"at":"2026-08-25T20:37:10.927Z","note":"PASS ch3 MJPEG 200"}
+{"at":"2026-08-25T20:37:10.927Z","note":"PASS ch3 multipart content-type"}
+{"at":"2026-08-25T20:37:11.027Z","note":"PASS ch3 streams JPEG bytes (39674)"}
+{"at":"2026-08-25T20:37:11.127Z","note":"PASS ch4 MJPEG 200"}
+{"at":"2026-08-25T20:37:11.127Z","note":"PASS ch4 multipart content-type"}
+{"at":"2026-08-25T20:37:11.227Z","note":"PASS ch4 streams JPEG bytes (38646)"}
+{"at":"2026-08-25T20:37:11.228Z","note":"SMOKE OK — all assertions passed"}

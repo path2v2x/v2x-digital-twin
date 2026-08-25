@@ -3,7 +3,7 @@
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "nodenext",
-    "lib": ["ES2023"],
+    "lib": ["ES2024"],
     "types": ["node"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "customConditions": ["development"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts"]
 }

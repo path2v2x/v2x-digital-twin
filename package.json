@@ -1,0 +1,12 @@
+{
+  "name": "v2x-backend",
+  "version": "2.0.0",
+  "private": true,
+  "description": "V2X digital twin on the SimForge engine. `pnpm dev` boots the full local stack: twin-server (WS :8765, MJPEG :8090) + twin-web (:5188).",
+  "scripts": {
+    "dev": "sh -c 'trap \"kill 0\" INT TERM; pnpm --dir apps/twin-server dev & pnpm --dir apps/twin-web dev & wait'",
+    "dev:server": "pnpm --dir apps/twin-server dev",
+    "dev:web": "pnpm --dir apps/twin-web dev",
+    "test:server": "pnpm --dir apps/twin-server test"
+  }
+}
