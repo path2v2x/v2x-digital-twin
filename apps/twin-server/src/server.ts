@@ -95,6 +95,7 @@ export function startServers(deps: DriveDeps): TwinServers {
     const url = new URL(req.url ?? '/', 'http://localhost');
     const streamMatch = /^\/streams\/(ch\d+)\.mjpg$/.exec(url.pathname);
     if (streamMatch) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
       if (!mjpeg.attach(streamMatch[1]!, res)) {
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: `unknown camera ${streamMatch[1]}` }));

@@ -15,7 +15,7 @@ export interface TwinCamera {
 
 export const CAMERA_SITE = { lat: 37.91560117034595, lon: -122.33478756387032 };
 const INTRINSICS = { fx: 1325.4, fy: 1325.4, cx: 1280, cy: 960, width: 2560, height: 1920 };
-const FEED_BASE = import.meta.env.VITE_STREAM_BASE_URL ?? 'http://localhost:8090';
+const FEED_BASE = import.meta.env.VITE_STREAM_BASE_URL ?? '';
 export const CAMERAS: readonly TwinCamera[] = [
   { id: 'ch1', height_m: 7, pitch_deg: -39.2, yaw_deg: -46.06, heading_deg: 200, intrinsics: INTRINSICS, twin_pose: { yaw_offset_deg: 0, pitch_offset_deg: 0, height_offset_m: 0, forward_offset_m: .5 }, streamUrl: `${FEED_BASE}/streams/ch1.mjpg` },
   { id: 'ch2', height_m: 7, pitch_deg: -40.52, yaw_deg: 71.25, heading_deg: 300, intrinsics: INTRINSICS, twin_pose: { yaw_offset_deg: 5.74, pitch_offset_deg: 15.49, height_offset_m: 1.48, forward_offset_m: .5 }, streamUrl: `${FEED_BASE}/streams/ch2.mjpg` },

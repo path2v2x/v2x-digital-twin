@@ -36,7 +36,7 @@ function useTwinSocket(fixtureMode: boolean) {
       fetch('/truth-frame-sample.bin').then((response) => response.ok ? response.arrayBuffer() : Promise.reject()).then((buffer) => setFrames([decodeTruthFrame(new Uint8Array(buffer))])).catch(() => undefined);
       return;
     }
-    const socket = new WebSocket(import.meta.env.VITE_TWIN_WS_URL ?? 'ws://localhost:8765/twin');
+    const socket = new WebSocket(import.meta.env.VITE_TWIN_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/twin`);
     socket.binaryType = 'arraybuffer';
     socketRef.current = socket;
     socket.onopen = () => setConnected(true);
@@ -54,7 +54,11 @@ function useTwinSocket(fixtureMode: boolean) {
         if (message.type === 'twin_cameras' && Array.isArray(message.cameras)) {
           setCameras(message.cameras.map((camera: Partial<TwinCamera> & { id: TwinCamera['id']; feed_url?: string; stream_url?: string }) => {
             const fallback = CAMERAS.find((candidate) => candidate.id === camera.id) ?? CAMERAS[0]!;
-            return { ...fallback, ...camera, streamUrl: camera.streamUrl ?? camera.feed_url ?? camera.stream_url ?? fallback.streamUrl };
+            const raw = camera.streamUrl ?? camera.feed_url ?? camera.stream_url ?? fallback.streamUrl;
+            // Same-origin: strip any absolute feed URL down to its path so the
+            // request goes through this page's origin (vite proxies /streams).
+            const streamUrl = /^https?:/.test(raw) ? new URL(raw).pathname : raw;
+            return { ...fallback, ...camera, streamUrl };
           }));
         }
       } else {
@@ -135,7 +139,7 @@ function useDriveSocket(fixtureMode: boolean): DriveSocket {
 
   useEffect(() => {
     if (fixtureMode) return;
-    const socket = new WebSocket(import.meta.env.VITE_DRIVE_WS_URL ?? 'ws://localhost:8765/drive');
+    const socket = new WebSocket(import.meta.env.VITE_DRIVE_WS_URL ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/drive`);
     socketRef.current = socket;
     socket.onmessage = (event) => {
       if (typeof event.data !== 'string') return;

@@ -34,6 +34,19 @@ function mapBundlePlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), mapBundlePlugin()],
-  server: { port: 5188, strictPort: true },
+  server: {
+    host: true,
+    port: 5188,
+    strictPort: true,
+    allowedHosts: true,
+    // Same-origin everything: the browser only ever talks to :5188. WS and MJPEG
+    // are proxied so remote (tailnet) access has no cross-origin request at all.
+    proxy: {
+      '/twin': { target: 'ws://localhost:8765', ws: true },
+      '/drive': { target: 'ws://localhost:8765', ws: true },
+      '/streams': { target: 'http://localhost:8090', changeOrigin: true },
+      '/health': { target: 'http://localhost:8090', changeOrigin: true },
+    },
+  },
   test: { environment: 'node', include: ['src/**/*.test.ts'] },
 });
