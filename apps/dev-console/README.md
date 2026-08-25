@@ -1,30 +1,20 @@
-# Drive API Dev Console
+# Drive API developer console
 
-Developer-facing console for the CARLA drive WebSocket API — spawn a car,
-drive it, script inputs, inject raw packets, and watch every frame on the
-wire. Built for partners integrating against the drive server.
+Developer-facing console for the SimForge twin-server `/drive` WebSocket API.
+It can spawn a session vehicle, send controls, build input scripts, inject raw
+JSON, display returned telemetry, and inspect every WebSocket message.
 
-## Stack
-React + Parcel. The whole UI lives in `src/App.tsx` (design tokens,
-day/night dash modes, B612 / B612 Mono / Archivo type via @fontsource).
+The console intentionally does not render camera frames. Visual simulation and
+MJPEG camera viewing belong to `apps/twin-web`; binary messages on `/drive` are
+SimForge truth frames and are shown only in the flight recorder.
 
-## Build
+## Run
+
+```bash
+cd apps/dev-console
+npm install
+npm run dev
 ```
-npm install   # or pnpm install
-node ./node_modules/parcel/lib/bin.js build index.html --dist-dir dist --no-source-maps
-```
 
-## Deploy (Path PC)
-The static file server on :8088 serves /tmp:
-```
-cp dist/*.js dist/*.css dist/*.woff dist/*.woff2 /tmp/
-cp dist/index.html /tmp/dev.html
-cp diagram.html /tmp/diagram.html
-```
-Note: /tmp is cleared on reboot — moving to a durable serve directory is a TODO.
-
-## Pages
-- `dev.html` — the console: ASSISTED / RAW operating modes, packet
-  injector, script deck with gear picker, flight recorder, datasheet
-- `diagram.html` — interactive explainer of the connection → DriveSession
-  → CARLA-actor routing model
+The default endpoint is `ws://localhost:8765/drive`. The active contract is
+[../../docs/twin-protocol-v2.md](../../docs/twin-protocol-v2.md).

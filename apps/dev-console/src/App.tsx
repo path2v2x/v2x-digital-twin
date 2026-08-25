@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Power, PowerOff, Car, Trash2, ChevronRight, ChevronUp, ChevronDown, Circle,
   Play, Square, CircleDot, Plus, Save, FolderOpen, Gauge, ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
-  Pause, Download, Activity, Sun, Moon, Network,
+  Pause, Download, Activity, Sun, Moon,
 } from 'lucide-react'
 // Cockpit typography: B612 was designed for aircraft instrument displays
 // (Airbus/ENAC) — the body & data faces of this console. Archivo carries the
@@ -95,9 +95,7 @@ a.modesw{text-decoration:none}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;overflow:hidden}
 .panel-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 13px;border-bottom:1px solid var(--line-2);background:linear-gradient(180deg,var(--surface),var(--surface)),var(--surface)}
 .panel-bd{padding:13px}
-/* live view + injector share one row and one height: the row is a grid with
-   stretch alignment, both children are flex columns, and the injector's
-   textarea absorbs the leftover height. The stage's 1:1 aspect sets the pace. */
+/* live telemetry + injector share one row */
 .grid2{display:grid;grid-template-columns:1.15fr 1fr;gap:14px;align-items:stretch;margin-top:14px}
 .grid2>.panel{display:flex;flex-direction:column}
 .pfill{flex:1;display:flex;flex-direction:column;min-height:0}
@@ -118,10 +116,7 @@ a.modesw{text-decoration:none}
 .views button:disabled{opacity:.4;cursor:not-allowed}
 .views button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 
-/* ── stage (camera bezel) + telemetry cluster ── */
-.stage{position:relative;background:#08090C;border-radius:5px;overflow:hidden;aspect-ratio:1/1;display:grid;place-items:center;box-shadow:var(--bezel)}
-.stage img{width:100%;height:100%;object-fit:cover;display:block}
-.stage .placeholder{color:#5F6873;font-family:var(--mono);font-size:12px;text-align:center;padding:20px;position:relative}
+/* ── telemetry cluster ── */
 .hud{display:grid;grid-template-columns:auto 1fr;gap:9px 14px;align-items:center;margin-top:12px}
 .speedo{grid-row:span 3;text-align:center;padding:6px 16px 6px 4px;border-right:1px solid var(--line)}
 .speedo .n{font-family:var(--mono);font-size:36px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
@@ -231,7 +226,9 @@ type Ctrl = { s: number; t: number; b: number; rev?: boolean }
 type Step = { id: number; s: number; t: number; b: number; rev?: boolean; ms: number; label: string }
 type Telem = { speed: number; gear: number; pos: number[]; steer: number; throttle: number; brake: number }
 type Saved = { name: string; steps: Step[] }
-// Wire log — every frame on the socket, kept verbatim
+type SessionInfo = { vehicle_id?: number; owned_actor_ids?: unknown[] }
+type JsonObject = Record<string, unknown>
+// Wire log — every message on the socket, kept verbatim
 type WireDir = 'TX' | 'RX' | 'EVT'
 type WirePkt = { i: number; t: string; dir: WireDir; kind: 'json' | 'bin' | 'evt'; ptype: string; data: string; bytes?: number }
 const WIRE_CAP = 3000
@@ -260,31 +257,29 @@ const PRESETS: { label: string; s: number; t: number; b: number; rev?: boolean }
   { label: 'Hard Left', s: -1, t: 0.3, b: 0 },
   { label: 'Hard Right', s: 1, t: 0.3, b: 0 },
 ]
-const VIEWS = ['chase', 'hood', 'bird', 'free']
-const LS_KEY = 'carla-dev-scripts'
+const LS_KEY = 'simforge-drive-scripts'
 let SID = 1
 
 const DOCS = [
   {
-    dir: 'send', name: 'start_session', title: 'Spawn a car & begin streaming',
+    dir: 'send', name: 'start_session', title: 'Spawn a drive-session vehicle',
     body: (
       <>
-        <p>Spawns your ego vehicle at a valid map spawn point, reconstructs the V2X scene for the given time window, attaches a camera, and begins the MJPEG frame stream. <code>start</code>/<code>end</code> are ISO-8601 timestamps defining the V2X reconstruction window (not a location).</p>
+        <p>Spawns an ego vehicle in the shared SimForge world and reconstructs the V2X scene for the requested time window. <code>start</code>/<code>end</code> are ISO-8601 timestamps defining the reconstruction window.</p>
         <pre>{`{ "type": "start_session",
-  "start": "2026-07-09T09:00:00Z",   // ISO time window begin
-  "end":   "2026-07-09T10:00:00Z",   // ISO time window end
-  "vehicle": "vehicle.tesla.model3" } // blueprint id`}</pre>
-        <div className="callout">Frames don't flow until a <code>camera_switch</code> is issued after spawn — the dev console sends one automatically.</div>
+  "start": "2026-07-09T09:00:00Z",
+  "end":   "2026-07-09T10:00:00Z",
+  "vehicle": "vehicle.tesla.model3" }`}</pre>
       </>
     ),
   },
   {
-    dir: 'send', name: 'control', title: 'Drive the car',
+    dir: 'send', name: 'control', title: 'Drive the vehicle',
     body: (
       <>
-        <p>The core driving packet. Applied to the car bound to <em>this connection</em>. Send it continuously (≈20 Hz) to hold an input, exactly like a driver holding a pedal. Values are clamped server-side.</p>
+        <p>The core driving packet. Applied to the vehicle bound to <em>this connection</em>. Send it continuously (≈20 Hz) to hold an input. Values are clamped server-side.</p>
         <pre>{`{ "type": "control",
-  "s": -1.0,   // steer   -1.0 (full left) … +1.0 (full right)
+  "s": -1.0,   // steer   -1.0 … +1.0
   "t":  1.0,   // throttle 0.0 … 1.0
   "b":  0.0,   // brake    0.0 … 1.0
   "rev": false // reverse gear
@@ -299,16 +294,12 @@ const DOCS = [
     ),
   },
   {
-    dir: 'send', name: 'camera_switch', title: 'Change camera view',
-    body: (<><p>Switches the streamed camera. Views: <code>chase</code>, <code>hood</code>, <code>bird</code>, <code>free</code>.</p><pre>{`{ "type": "camera_switch", "view": "chase" }`}</pre></>),
-  },
-  {
     dir: 'send', name: 'respawn', title: 'Reset position',
-    body: (<><p>Teleports the car back to a spawn point (velocity zeroed). Useful between script runs.</p><pre>{`{ "type": "respawn" }`}</pre></>),
+    body: (<><p>Returns the vehicle to its spawn point with velocity zeroed.</p><pre>{`{ "type": "respawn" }`}</pre></>),
   },
   {
-    dir: 'send', name: 'end_session', title: 'Despawn & end',
-    body: (<><p>Despawns the car and camera, ends the session. The connection stays open — you can <code>start_session</code> again.</p><pre>{`{ "type": "end_session" }`}</pre></>),
+    dir: 'send', name: 'end_session', title: 'Despawn and end',
+    body: (<><p>Despawns the session-owned vehicle and reconstruction. The connection stays open.</p><pre>{`{ "type": "end_session" }`}</pre></>),
   },
   {
     dir: 'send', name: 'server_status', title: 'Query server',
@@ -316,18 +307,14 @@ const DOCS = [
   },
   {
     dir: 'resp', name: 'session_ready', title: 'Response · spawn confirmed',
-    body: (<><p>Sent after <code>start_session</code> succeeds. <code>vehicle_id</code> is the CARLA actor id of <em>your</em> car — the client-visible identity for this session.</p><pre>{`{ "type": "session_ready", "vehicle_id": 35, "objects_count": 0 }`}</pre></>),
+    body: (<><p>Sent after <code>start_session</code> succeeds. <code>vehicle_id</code> identifies this connection's engine actor.</p><pre>{`{ "type": "session_ready", "vehicle_id": 35, "objects_count": 0 }`}</pre></>),
   },
   {
     dir: 'resp', name: 'telemetry', title: 'Response · vehicle state',
-    body: (<><p>Returned in response to <code>control</code> (and on tick). Speed is m/s.</p><pre>{`{ "type": "telemetry",
-  "speed": 3.5, "gear": 1,
-  "pos": [78.9, -91.1, 10.7], "rot": [0, 182, 0],
+    body: (<><p>Returned in response to <code>control</code>. Speed is km/h.</p><pre>{`{ "type": "telemetry",
+  "speed": 12.6, "gear": 1,
+  "pos": [78.9, -91.1, 0], "rot": [0, 182, 0],
   "steer": -1.0, "throttle": 1.0, "brake": 0.0 }`}</pre></>),
-  },
-  {
-    dir: 'resp', name: 'binary frame', title: 'Response · camera (binary)',
-    body: (<><p>Camera frames arrive as <strong>binary</strong> WebSocket messages — raw JPEG bytes, ~10–20 fps. Render each directly (e.g. an object URL on an <code>&lt;img&gt;</code>). All non-binary messages are JSON.</p></>),
   },
 ]
 
@@ -359,13 +346,12 @@ const DocList = memo(function DocList() {
 
 // ── App ──────────────────────────────────────────────────────────────
 export default function App() {
-  const [url, setUrl] = useState('ws://localhost:8765/')
+  const [url, setUrl] = useState('ws://localhost:8765/drive')
   const [status, setStatus] = useState<Status>('disconnected')
   const [vehicles, setVehicles] = useState<string[]>(['vehicle.lincoln.mkz'])
   const [vehicle, setVehicle] = useState('vehicle.lincoln.mkz')
   const [sessionActive, setSessionActive] = useState(false)
   const [vehicleId, setVehicleId] = useState<number | null>(null)
-  const [view, setView] = useState('chase')
   const [telem, setTelem] = useState<Telem | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [spawning, setSpawning] = useState(false)
@@ -376,7 +362,7 @@ export default function App() {
   const [scriptView, setScriptView] = useState<'steps' | 'packets'>('steps')
   const [copiedPkts, setCopiedPkts] = useState(false)
   const [inj, setInj] = useState('{ "type": "server_status" }')
-  const [sessionInfo, setSessionInfo] = useState<any>(null)
+  const [sessionInfo, setSessionInfo] = useState<SessionInfo | null>(null)
   // Operating mode. ASSISTED: the console transmits for you (20 Hz control
   // loop, pads drive, script runner sends). RAW: the console never sends a
   // control packet on its own — the injector is the only TX path; pads and
@@ -396,7 +382,7 @@ export default function App() {
     active.current = { ...active.current, rev: g === 'R' }
   }
   useEffect(() => {
-    try { const s = localStorage.getItem('carla-dev-opmode'); if (s === 'raw' || s === 'assisted') setOpMode(s) } catch { /* ignore */ }
+    try { const s = localStorage.getItem('simforge-drive-opmode'); if (s === 'raw' || s === 'assisted') setOpMode(s) } catch { /* ignore */ }
   }, [])
   const [playingId, setPlayingId] = useState<number | null>(null)
   const [mode, setMode] = useState<'idle' | 'manual' | 'playing'>('idle')
@@ -406,20 +392,14 @@ export default function App() {
   const [scriptName, setScriptName] = useState('')
 
   const wsRef = useRef<WebSocket | null>(null)
-  const imgRef = useRef<HTMLImageElement>(null)
-  const lastUrl = useRef<string | null>(null)
+  const userClose = useRef(false)
   const active = useRef<Ctrl>({ s: 0, t: 0, b: 0 })
   const keys = useRef<Set<string>>(new Set())
   const rec = useRef<{ on: boolean; segs: Step[]; last: Ctrl; t: number }>({ on: false, segs: [], last: { s: 0, t: 0, b: 0 }, t: 0 })
   const abort = useRef(false)
   const lastTelemT = useRef(0)   // throttle HUD re-renders to ~8 Hz
-  const lastFrameT = useRef(0)   // stall detection
-  const userClose = useRef(false) // distinguish user disconnect from a drop
-  const [stalled, setStalled] = useState(false)
-  const [streaming, setStreaming] = useState(false) // first frame arrived
-  const streamingRef = useRef(false)
 
-  // ── Wire log: every socket frame, verbatim ──
+  // ── Wire log: every socket message, verbatim ──
   const wireSeq = useRef(0)
   const wireBuf = useRef<WirePkt[]>([])
   const wireDirty = useRef(false)
@@ -474,7 +454,7 @@ export default function App() {
 
   useEffect(() => {
     const local = /^(localhost|127\.|10\.|192\.168\.|100\.|path-b860i)/.test(location.hostname)
-    setUrl(local ? `ws://${location.hostname}:8765/` : 'wss://engine-palm-naples-fri.trycloudflare.com/')
+    setUrl(local ? `ws://${location.hostname}:8765/drive` : 'wss://engine-palm-naples-fri.trycloudflare.com/drive')
     try { setSaved(JSON.parse(localStorage.getItem(LS_KEY) || '[]')) } catch { /* ignore */ }
   }, [])
 
@@ -486,12 +466,12 @@ export default function App() {
       recordWire('TX', 'json', 'control', raw)
     }
   }
-  const sendJSON = (o: any) => {
+  const sendJSON = (o: JsonObject) => {
     const ws = wsRef.current
     if (ws && ws.readyState === 1) {
       const raw = JSON.stringify(o)
       ws.send(raw)
-      recordWire('TX', 'json', o?.type ?? '?', raw)
+      recordWire('TX', 'json', typeof o.type === 'string' ? o.type : '?', raw)
     }
   }
 
@@ -499,7 +479,7 @@ export default function App() {
   // stop a playing script, release manual driving, zero the held input.
   const switchOpMode = (m: 'assisted' | 'raw') => {
     setOpMode(m)
-    try { localStorage.setItem('carla-dev-opmode', m) } catch { /* ignore */ }
+    try { localStorage.setItem('simforge-drive-opmode', m) } catch { /* ignore */ }
     if (m === 'raw') {
       abort.current = true; setPlayingId(null); setMode('idle')
       setManual(false); active.current = idleCtrl()
@@ -514,7 +494,12 @@ export default function App() {
     if (!ws || ws.readyState !== 1 || !inj.length) return
     ws.send(inj)
     let ptype = 'raw'
-    try { ptype = JSON.parse(inj)?.type ?? 'json (no type)' } catch { ptype = 'raw (not JSON)' }
+    try {
+      const parsed: unknown = JSON.parse(inj)
+      ptype = parsed && typeof parsed === 'object' && 'type' in parsed && typeof parsed.type === 'string'
+        ? parsed.type
+        : 'json (no type)'
+    } catch { ptype = 'raw (not JSON)' }
     recordWire('TX', 'json', ptype, inj)
   }
 
@@ -536,14 +521,6 @@ export default function App() {
     return () => window.clearInterval(id)
   }, [sessionActive])
 
-  // stall detection: flag if frames stop arriving while a session is active
-  useEffect(() => {
-    if (!sessionActive) { setStalled(false); return }
-    const id = window.setInterval(() => {
-      if (lastFrameT.current && Date.now() - lastFrameT.current > 3000) setStalled(true)
-    }, 1000)
-    return () => window.clearInterval(id)
-  }, [sessionActive])
 
   // keyboard driving (only in manual mode)
   useEffect(() => {
@@ -565,53 +542,80 @@ export default function App() {
     return () => { window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku) }
   }, [manual, sessionActive, mode])
 
-  const handleMsg = useCallback((ev: MessageEvent) => {
+  const handleMsg = useCallback((ev: MessageEvent<unknown>) => {
     if (ev.data instanceof Blob) {
-      recordWire('RX', 'bin', 'frame', '[binary JPEG camera frame]', ev.data.size)
-      lastFrameT.current = Date.now()
-      setStalled(false)
-      if (!streamingRef.current) { streamingRef.current = true; setStreaming(true) }
-      const u = URL.createObjectURL(ev.data)
-      if (imgRef.current) imgRef.current.src = u
-      if (lastUrl.current) URL.revokeObjectURL(lastUrl.current)
-      lastUrl.current = u
+      recordWire('RX', 'bin', 'truth_frame', '[binary SimForge truth frame]', ev.data.size)
       return
     }
-    let m: any
-    try { m = JSON.parse(ev.data) } catch { recordWire('RX', 'json', 'unparsed', String(ev.data)); return }
-    recordWire('RX', 'json', m?.type ?? '?', ev.data)
-    switch (m.type) {
-      case 'session_ready': setVehicleId(m.vehicle_id); setSessionInfo(m); setSessionActive(true); setSpawning(false); setErr(null); lastFrameT.current = Date.now(); setTimeout(() => sendJSON({ type: 'camera_switch', view }), 300); break
-      case 'telemetry': { const now = Date.now(); if (now - lastTelemT.current >= 120) { lastTelemT.current = now; setTelem({ speed: m.speed ?? 0, gear: m.gear ?? 0, pos: m.pos ?? [0, 0, 0], steer: m.steer ?? 0, throttle: m.throttle ?? 0, brake: m.brake ?? 0 }) } break }
-      case 'camera_switched': setView(m.view); break
-      case 'vehicles': case 'vehicle_list': if (Array.isArray(m.vehicles)) { const list = m.vehicles.map((v: any) => v.id || v.name || v); setVehicles(list); setVehicle((cur) => (list.includes(cur) ? cur : list[0] || cur)) } break
-      case 'error': setErr(m.message || m.error || 'server error'); setSpawning(false); break
+    const raw = String(ev.data)
+    let parsed: unknown
+    try { parsed = JSON.parse(raw) } catch { recordWire('RX', 'json', 'unparsed', raw); return }
+    if (!parsed || typeof parsed !== 'object') { recordWire('RX', 'json', 'unparsed', raw); return }
+    const m: JsonObject = parsed as JsonObject
+    const type = typeof m.type === 'string' ? m.type : '?'
+    recordWire('RX', 'json', type, raw)
+    switch (type) {
+      case 'session_ready': {
+        const vehicleId = typeof m.vehicle_id === 'number' ? m.vehicle_id : undefined
+        const info: SessionInfo = {
+          vehicle_id: vehicleId,
+          owned_actor_ids: Array.isArray(m.owned_actor_ids) ? m.owned_actor_ids : [],
+        }
+        setVehicleId(vehicleId ?? null); setSessionInfo(info); setSessionActive(true); setSpawning(false); setErr(null)
+        break
+      }
+      case 'telemetry': {
+        const now = Date.now()
+        if (now - lastTelemT.current >= 120) {
+          lastTelemT.current = now
+          const num = (value: unknown) => typeof value === 'number' ? value : 0
+          const pos = Array.isArray(m.pos) ? m.pos.map(num) : [0, 0, 0]
+          setTelem({ speed: num(m.speed), gear: num(m.gear), pos, steer: num(m.steer), throttle: num(m.throttle), brake: num(m.brake) })
+        }
+        break
+      }
+      case 'vehicles':
+      case 'vehicle_list':
+        if (Array.isArray(m.vehicles)) {
+          const list = m.vehicles.flatMap((entry) => {
+            if (typeof entry === 'string') return [entry]
+            if (!entry || typeof entry !== 'object') return []
+            if ('id' in entry && typeof entry.id === 'string') return [entry.id]
+            if ('name' in entry && typeof entry.name === 'string') return [entry.name]
+            return []
+          })
+          setVehicles(list); setVehicle((cur) => (list.includes(cur) ? cur : list[0] || cur))
+        }
+        break
+      case 'error':
+        setErr(typeof m.message === 'string' ? m.message : typeof m.error === 'string' ? m.error : 'server error')
+        setSpawning(false)
+        break
       default: break
     }
-  }, [view])
+  }, [])
 
   const connect = () => {
     if (wsRef.current) return
     userClose.current = false
-    setStatus('connecting'); setErr(null); setStalled(false)
+    setStatus('connecting'); setErr(null)
     let ws: WebSocket
-    try { ws = new WebSocket(url); ws.binaryType = 'blob' } catch (e: any) { setErr('WebSocket: ' + e.message); setStatus('closed'); return }
+    try { ws = new WebSocket(url); ws.binaryType = 'blob' } catch (e: unknown) { setErr('WebSocket: ' + (e instanceof Error ? e.message : String(e))); setStatus('closed'); return }
     wsRef.current = ws
     ws.onopen = () => { recordWire('EVT', 'evt', 'open', `connection OPEN → ${url}`); setStatus('open'); sendJSON({ type: 'list_vehicles' }) }
     ws.onmessage = handleMsg
     ws.onerror = () => { recordWire('EVT', 'evt', 'error', 'socket error'); setErr('socket error (see console)') }
     ws.onclose = () => {
       recordWire('EVT', 'evt', 'close', 'connection CLOSED')
-      setStatus('closed'); setSessionActive(false); setVehicleId(null); setSessionInfo(null); setTelem(null); setSpawning(false); setStalled(false); streamingRef.current = false; setStreaming(false); wsRef.current = null
+      setStatus('closed'); setSessionActive(false); setVehicleId(null); setSessionInfo(null); setTelem(null); setSpawning(false); wsRef.current = null
       if (!userClose.current) setErr('Connection dropped (network or tunnel). Click Connect to resume — your session ended, so spawn again.')
     }
   }
   const disconnect = () => { userClose.current = true; wsRef.current?.close(1000, 'user') }
 
-  const spawn = () => { if (!open || sessionActive) return; setSpawning(true); setErr(null); setStalled(false); streamingRef.current = false; setStreaming(false); const w = isoWindow(); sendJSON({ type: 'start_session', start: w.start, end: w.end, vehicle }) }
-  const endSession = () => { sendJSON({ type: 'end_session' }); setSessionActive(false); setVehicleId(null); setSessionInfo(null); setTelem(null); setMode('idle'); setStalled(false); streamingRef.current = false; setStreaming(false); setGear('D'); gearRef.current = 'D'; active.current = { s: 0, t: 0, b: 0, rev: false } }
+  const spawn = () => { if (!open || sessionActive) return; setSpawning(true); setErr(null); const w = isoWindow(); sendJSON({ type: 'start_session', start: w.start, end: w.end, vehicle }) }
+  const endSession = () => { sendJSON({ type: 'end_session' }); setSessionActive(false); setVehicleId(null); setSessionInfo(null); setTelem(null); setMode('idle'); setGear('D'); gearRef.current = 'D'; active.current = { s: 0, t: 0, b: 0, rev: false } }
   const respawn = () => sendJSON({ type: 'respawn' })
-  const switchView = (v: string) => { setView(v); sendJSON({ type: 'camera_switch', view: v }) }
 
   // manual on-screen pad
   // Pads send immediately on press/release (assisted mode) so even a tap
@@ -683,20 +687,20 @@ export default function App() {
   const delScript = (name: string) => persist(saved.filter((s) => s.name !== name))
 
   const totalMs = useMemo(() => steps.reduce((a, s) => a + s.ms, 0), [steps])
-  const speedKmh = telem ? Math.round(telem.speed * 3.6) : 0
+  const speedKmh = telem ? Math.round(telem.speed) : 0
 
   // day/night dash mode — persisted, seeded from the OS preference
   const [theme, setTheme] = useState<'night' | 'day'>('night')
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('carla-dev-theme')
+      const stored = localStorage.getItem('simforge-drive-theme')
       if (stored === 'day' || stored === 'night') setTheme(stored)
       else if (window.matchMedia?.('(prefers-color-scheme: light)').matches) setTheme('day')
     } catch { /* ignore */ }
   }, [])
   const toggleTheme = () => setTheme((t) => {
     const next = t === 'night' ? 'day' : 'night'
-    try { localStorage.setItem('carla-dev-theme', next) } catch { /* ignore */ }
+    try { localStorage.setItem('simforge-drive-theme', next) } catch { /* ignore */ }
     return next
   })
 
@@ -710,7 +714,7 @@ export default function App() {
             <span className="plate-mark"><Car className="icon" /></span>
             <div>
               <div className="plate-model">DRIVE API <span>· DEV CONSOLE</span></div>
-              <div className="plate-sub">CARLA digital twin · drive-by-wire over WebSocket</div>
+              <div className="plate-sub">SimForge digital twin · /drive over WebSocket</div>
             </div>
           </div>
           <div className="lamps" aria-hidden="true">
@@ -730,10 +734,6 @@ export default function App() {
             </button>
           </div>
           <span className={`pill st-${status}`}><span className="dot" />{status}</span>
-          <a className="modesw" href="./diagram.html" target="_blank" rel="noopener"
-            title="How a connection becomes a car — interactive routing diagram (opens in a new tab)">
-            <Network className="icon-sm" /> Routing
-          </a>
           <button className="modesw" onClick={toggleTheme} title="Toggle day / night mode">
             {theme === 'night' ? <><Sun className="icon-sm" /> Day</> : <><Moon className="icon-sm" /> Night</>}
           </button>
@@ -763,41 +763,29 @@ export default function App() {
             <span className="k">session_ready</span>
             <span className="v" style={{ fontSize: 12, color: sessionActive ? 'var(--ok)' : 'var(--faint)' }}>
               {sessionInfo
-                ? `veh ${sessionInfo.vehicle_id} · ${(sessionInfo.sensor_actor_ids?.length ?? 0)} sensors · ${(sessionInfo.owned_actor_ids?.length ?? 0)} owned`
+                ? `veh ${sessionInfo.vehicle_id} · ${(sessionInfo.owned_actor_ids?.length ?? 0)} owned`
                 : 'no session'}
             </span>
           </div>
-          <div className="spring" />
-          <div className="views">
-            {VIEWS.map((v) => <button key={v} className={v === view ? 'on' : ''} disabled={!sessionActive} onClick={() => switchView(v)}>{v}</button>)}
-          </div>
         </div>
 
-        {/* main: live view | recorder */}
+        {/* main: telemetry | packet injector */}
         <div className="grid2">
-          {/* live view */}
           <div className="panel">
             <div className="panel-hd">
-              <span className="eyebrow">Live view · camera + telemetry</span>
-              <span style={{ display: 'inline-flex', gap: 10 }}>
-                {opMode === 'raw' && <span className="eyebrow" style={{ color: 'var(--accent)' }} title="No automatic control packets — telemetry only arrives in reply to packets you inject.">raw · manual TX only</span>}
-                <span className="eyebrow" style={{ color: stalled ? 'var(--crit)' : sessionActive && streaming ? 'var(--ok)' : 'var(--faint)' }}>{stalled ? 'stalled' : sessionActive ? (streaming ? 'streaming' : 'starting…') : 'idle'}</span>
-              </span>
+              <span className="eyebrow">Live vehicle telemetry</span>
+              <span className="eyebrow" style={{ color: sessionActive ? 'var(--ok)' : 'var(--faint)' }}>{sessionActive ? 'active' : 'idle'}</span>
             </div>
             <div className="panel-bd">
-              <div className="stage">
-                <img ref={imgRef} alt="" style={{ display: sessionActive && streaming && !stalled ? 'block' : 'none' }} />
-                {!sessionActive && <div className="placeholder">Spawn a vehicle to start the camera stream</div>}
-                {sessionActive && !streaming && !stalled && <div className="placeholder">Starting camera stream…<br />(scene reconstruction, ~5s)</div>}
-                {stalled && <div className="placeholder" style={{ color: '#E58A8A' }}>⚠ Camera stream stalled — the connection may have dropped.<br />Reconnect to resume.</div>}
-              </div>
               <div className="hud">
                 <div className="speedo"><div className="n tnum">{speedKmh}</div><div className="u">km/h</div></div>
                 <Meter label="Throttle" val={telem?.throttle ?? 0} color="var(--ok)" />
                 <Meter label="Brake" val={telem?.brake ?? 0} color="var(--crit)" />
                 <SteerMeter val={telem?.steer ?? 0} />
               </div>
-              {telem && <div className="hint">gear {telem.gear} · pos [{telem.pos.map((n) => n.toFixed(1)).join(', ')}]</div>}
+              {telem
+                ? <div className="hint">gear {telem.gear} · pos [{telem.pos.map((n) => n.toFixed(1)).join(', ')}]</div>
+                : <div className="hint">Spawn a vehicle and send control packets to receive telemetry.</div>}
             </div>
           </div>
 
@@ -956,7 +944,7 @@ export default function App() {
         <div className="panel" style={{ marginTop: 16 }}>
           <div className="panel-hd">
             <span className="eyebrow" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Activity className="icon-sm" /> Flight recorder · every socket frame, verbatim
+              <Activity className="icon-sm" /> Flight recorder · every socket message, verbatim
             </span>
             <div className="wire-controls">
               {(['control', 'telemetry', 'binary', 'other'] as const).map((k) => (

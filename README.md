@@ -1,161 +1,93 @@
-# v2x-backend
+# V2X SimForge Digital Twin
 
-Canonical repo for the V2X ingest API, CARLA bridge, and digital twin dashboard.
+This repository runs the Richmond Field Station V2X digital twin on the
+[SimForgeinc/simforge](https://github.com/SimForgeinc/simforge) engine. The
+runtime is fully SimForge-native; the former CARLA bridge and SvelteKit
+dashboard have been removed.
 
-## Repo Structure
+## Architecture
 
-```
-apps/
-  bridge/    Python bridge — connects CARLA to the V2X platform
-  web/       SvelteKit dashboard deployed to Amplify
-assets/
-  richmond-field-station/  Selected Richmond Field Station map assets
-scripts/
-  launch-drive.sh   Start the drive server on the GPU server
-infra/
-  aws-cli/   Provision DynamoDB, Lambda, IoT Core, API Gateway, S3, KVS
-  amplify/   Deploy the web dashboard to AWS Amplify
-```
+- `apps/twin-server` owns engine truth and serves WebSocket protocols on
+  `:8765` (`/drive` and `/twin`) plus MJPEG camera streams on `:8090`.
+- `apps/twin-web` is the React/Three.js client built on `@simforge/viewer`.
+- `apps/perception` is the real detection source. It consumes the live camera
+  pipeline and publishes detections independently of the simulation engine.
+- `apps/dev-console` is a developer tool for exercising the preserved `/drive`
+  JSON protocol.
 
-## Quick Start
+The wire contract, compatibility behavior, transports, and known degraded
+operations are documented in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).
 
-```bash
-# Install
-make web-install
-make bridge-install
+## Run the local twin
 
-# Develop
-make web-dev          # SvelteKit dev server
-make bridge-dry-run   # Bridge dry-run (no CARLA needed)
+Prerequisites:
 
-# Deploy
-make deploy-web       # Deploy dashboard to Amplify
-```
+- Node.js and pnpm
+- the pinned `SimForgeinc/simforge` engine worktree expected by
+  `apps/twin-server`
+- the Richmond Field Station SimForge map bundle
 
-## Canonical Workflow
-
-1. Provision the backend data plane and API:
+Install each application as needed, then start the complete stack from the
+repository root:
 
 ```bash
-cd infra/aws-cli
-./provision.sh
-./provision-read-api.sh
-./provision-write-api.sh
-./provision-state-bucket.sh
-AWS_REGION=us-west-2 ./provision-video-streams.sh
+pnpm dev
 ```
 
-2. Deploy the dashboard:
+That command starts only living applications:
+
+- twin-server WebSocket: `ws://localhost:8765/drive` and
+  `ws://localhost:8765/twin`
+- twin-server MJPEG/health: `http://localhost:8090`
+- twin-web: `http://localhost:5188`
+
+Focused commands:
 
 ```bash
-cd infra/amplify
-API_BASE_URL="https://<api-id>.execute-api.us-west-1.amazonaws.com" \
-./deploy.sh
+pnpm run dev:server
+pnpm run dev:web
+pnpm run test:server
+pnpm --dir apps/twin-web build
 ```
 
-3. Run the bridge (drive mode):
+Equivalent convenience targets are available through `make help`.
 
-```bash
-./scripts/launch-drive.sh
-```
-
-Or manually:
-
-```bash
-cd apps/bridge
-source /path/to/carla-venv/bin/activate
-DTB_V2X_API_URL="https://<api-id>.execute-api.us-west-1.amazonaws.com/detections/recent" \
-python -m digital_twin_bridge.drive_main
-```
-
-## Runtime Config
-
-`apps/web/static/config.json` and the Amplify deployment expect:
-
-```json
-{
-  "apiBaseUrl": "https://<api-id>.execute-api.us-west-1.amazonaws.com",
-  "stateBaseUrl": "https://<api-id>.execute-api.us-west-1.amazonaws.com",
-  "statePath": "/state",
-  "mapDataPath": "/map-data",
-  "videoCameraIds": ["ch1", "ch2", "ch3", "ch4"],
-  "perceptionStreamUrls": {},
-  "perceptionStreamBaseUrl": "",
-  "perceptionStreamPathTemplate": "/streams/{camera_id}.mjpg"
-}
-```
-
-The dashboard reads digital twin state and snapshot assets through the read API. The state bucket can remain private because the browser no longer needs direct S3 access.
-
-## Richmond Field Station Assets
-
-The repository includes nine files from the production Richmond Field Station
-map asset `richmond-field-station_20260410-185647`:
-
-| Asset group | Files |
-| --- | --- |
-| Road geometry | [GeoJSON](assets/richmond-field-station/map/richmond-field-station_20260410-185647.geojson), [OpenDRIVE](assets/richmond-field-station/map/richmond-field-station_20260410-185647.xodr), [RoadRunner XML](assets/richmond-field-station/map/richmond-field-station_20260410-185647_rrdata.xml), [lane polygons](assets/richmond-field-station/map/richmond-field-station_20260410-185647.lane-polygons.geojson), and [signals](assets/richmond-field-station/map/richmond-field-station_20260410-185647.signals.geojson) |
-| Search and topology | [Search index](assets/richmond-field-station/map/richmond-field-station_20260410-185647.search-index.json) and [topology index](assets/richmond-field-station/map/richmond-field-station_20260410-185647.topology-index.json) |
-| Media | [Full video](assets/richmond-field-station/map/richmond-field-station_20260410-185647.mp4) and [thumbnail](assets/richmond-field-station/map/richmond-field-station_20260410-185647_thumbnail.png) |
-
-All other map artifacts are intentionally excluded, including CARLA runtime,
-enrichment, preview, 3D support, `.glb`, and `.fbx` files.
-
-## Live Video
-
-- Kinesis Video Streams are provisioned in `us-west-2`
-- Camera stream names default to: `v2x-backend-cam-ch1` through `v2x-backend-cam-ch4`
-- The API exposes `GET /video/session/{camera_id}` and returns a short-lived HLS URL
-- The dashboard requests HLS sessions through the API; browser clients do not use AWS credentials directly
-- `/live` prefers `perceptionStreamUrls[cameraId]` when configured, then falls back to the raw
-  Kinesis HLS session. It can also build URLs from `perceptionStreamBaseUrl`, using
-  `/streams/{camera_id}.mjpg` by default. Use this for Path PC object-detection output with bounding boxes:
-
-```json
-{
-  "perceptionStreamBaseUrl": "https://perception.path2v2x.net"
-}
-```
-
-The perception service should upload detection records to `POST /detections` using the same schema shown
-on the Objects DB documentation tab. The `/live` page shows the recent Objects DB table below the camera
-grid, so detections posted by the Path PC will appear there without leaving Street View.
-
-## Perception App
-
-The object detection/localization pipeline from `path2v2x/co-perception` now lives in
-`apps/perception`. Run it from this repo on the Path PC with:
-
-```bash
-python3.10 -m venv /home/path/V2XCarla/perception-venv
-/home/path/V2XCarla/perception-venv/bin/pip install -r apps/perception/requirements.txt
-sudo install -m 0755 scripts/launch-perception.sh /home/path/V2XCarla/v2x-backend/scripts/launch-perception.sh
-sudo install -m 0644 scripts/systemd/v2x-perception.service /etc/systemd/system/v2x-perception.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now v2x-perception.service
-```
-
-The service starts with `V2X_PERCEPTION_UPLOAD=false`; enable uploads after validating calibration and
-model output. With `V2X_PERCEPTION_STREAM_PORT=8090`, the service publishes:
+## Repository layout
 
 ```text
-http://<path-pc-host>:8090/streams/ch1.mjpg
-http://<path-pc-host>:8090/streams/ch2.mjpg
-http://<path-pc-host>:8090/streams/ch3.mjpg
-http://<path-pc-host>:8090/streams/ch4.mjpg
+apps/
+  twin-server/   SimForge world, /drive + /twin WebSockets, MJPEG publication
+  twin-web/      Three.js/@simforge/viewer digital-twin client
+  perception/    Live camera ingestion and object detection
+  dev-console/   Low-level /drive protocol console
+assets/
+  richmond-field-station/  Source map artifacts
+config/
+  cameras.json   Preserved camera configuration
+infra/
+  aws-cli/       V2X cloud ingestion/state provisioning
+scripts/
+  systemd/       Surviving perception and transport units
 ```
 
-## GPU Server
+## Engine and map dependencies
 
-The drive server runs on the GPU server (`100.72.252.40` via Tailscale). After pulling changes:
+`twin-server` consumes a pinned SimForge engine checkout through pnpm file
+references. See `apps/twin-server/README.md` for the expected worktree and map
+bundle locations. The server's native scenario templates, trajectories, and
+traffic presets live under `apps/twin-server/assets`; runtime code does not
+read from retired bridge paths.
+
+## Perception
+
+`apps/perception` remains the production detection source. Its Python
+requirements, launch helper, tests, calibration assets, and historical
+operational notes are intentionally retained. Start it independently when the
+live camera pipeline is required:
 
 ```bash
-cd /home/path/V2XCarla/v2x-backend
-git pull
-./scripts/launch-drive.sh
+./scripts/launch-perception.sh
 ```
 
-## Notes
-
-- The MQTT topic pattern remains `v2x/v1/detections/+/+`.
-- `infra/aws-cli/decommission-legacy-v2x.sh` is the post-cutover cleanup entrypoint for the old `v2x-detections-*` stack.
+The root `pnpm dev` command boots the simulation server, its MJPEG publication,
+and the web client; it does not replace the external live perception process.

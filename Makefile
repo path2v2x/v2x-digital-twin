@@ -1,33 +1,23 @@
-.PHONY: help web-dev web-build web-install bridge-install bridge-dry-run deploy-web
+.PHONY: help install dev server-dev web-dev server-test web-build
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-# ── Web (SvelteKit dashboard) ──
+install: ## Install twin-server and twin-web dependencies
+	pnpm --dir apps/twin-server install
+	pnpm --dir apps/twin-web install
 
-web-install: ## Install web dependencies
-	cd apps/web && npm ci
+dev: ## Start twin-server and twin-web
+	pnpm dev
 
-web-dev: ## Start web dev server
-	cd apps/web && npm run dev
+server-dev: ## Start the SimForge twin server
+	pnpm --dir apps/twin-server dev
 
-web-build: ## Build web for production
-	cd apps/web && npm run build
+web-dev: ## Start the SimForge twin web client
+	pnpm --dir apps/twin-web dev
 
-# ── Bridge (Python CARLA bridge) ──
+server-test: ## Run focused twin-server tests
+	pnpm --dir apps/twin-server test
 
-bridge-install: ## Install bridge Python dependencies
-	cd apps/bridge && pip install -r requirements.txt
-
-bridge-dry-run: ## Run bridge in dry-run mode (no CARLA needed)
-	cd apps/bridge && python -m digital_twin_bridge.drive_main --dry-run
-
-# ── Deployment ──
-
-deploy-web: ## Deploy web dashboard to AWS Amplify
-	cd infra/amplify && ./deploy.sh
-
-# ── Launch (GPU server) ──
-
-launch-drive: ## Start drive server (requires CARLA running)
-	./scripts/launch-drive.sh
+web-build: ## Build the twin web client
+	pnpm --dir apps/twin-web build

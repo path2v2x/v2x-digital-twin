@@ -1,7 +1,7 @@
 [Unit]
 Description=V2X Cloudflare Drive Tunnel
-Wants=network-online.target v2x-drive.service
-After=network-online.target v2x-drive.service
+Wants=network-online.target
+After=network-online.target
 StartLimitIntervalSec=0
 
 [Service]
