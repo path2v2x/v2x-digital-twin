@@ -44,7 +44,10 @@ function useTwinSocket(fixtureMode: boolean) {
     socket.onmessage = (event) => {
       if (typeof event.data === 'string') {
         const message = JSON.parse(event.data);
-        if (message.type === 'twin_clock') setClock(Number(message.time ?? message.clock ?? 0));
+        if (message.type === 'twin_clock' && message.replay_clock) {
+          const replayDate = new Date(message.replay_clock);
+          setClock(replayDate.getUTCHours() * 3600 + replayDate.getUTCMinutes() * 60 + replayDate.getUTCSeconds());
+        }
         if (message.type === 'twin_mode') setMode(message.mode);
         if (message.type === 'eva_alert') setAlerts((current) => [...current, { id: crypto.randomUUID(), title: message.title ?? 'EVA alert', message: message.message ?? 'Emergency vehicle activity' }]);
         if (message.type === 'telemetry') setTelemetry({ speed: Number(message.speed ?? 0), gear: Number(message.gear ?? 0) });
@@ -112,6 +115,7 @@ function DrivePage({ frames, fixtureMode }: { frames: readonly TruthFrame[]; fix
   const [active, setActive] = useState(false);
   const [cameraMode, setCameraMode] = useState<'chase' | 'first-person'>('chase');
   const [telemetry, setTelemetry] = useState({ speed: 11.9, gear: 2 });
+  const [egoActorId, setEgoActorId] = useState<string | null>(null);
   const keys = useRef(new Set<string>());
   const socketRef = useRef<WebSocket | null>(null);
   const transmit = useCallback((message: object) => {
@@ -126,8 +130,9 @@ function DrivePage({ frames, fixtureMode }: { frames: readonly TruthFrame[]; fix
       if (typeof event.data !== 'string') return;
       const message = JSON.parse(event.data);
       if (message.type === 'telemetry') setTelemetry({ speed: Number(message.speed ?? 0), gear: Number(message.gear ?? 0) });
-      if (message.type === 'session_ready') setActive(true);
-      if (message.type === 'session_ended') setActive(false);
+      if (message.type === 'session_ready') { setActive(true); setEgoActorId(String(message.vehicle_id)); }
+      if (message.type === 'respawned' || message.type === 'teleported') setEgoActorId(String(message.vehicle_id));
+      if (message.type === 'session_ended') { setActive(false); setEgoActorId(null); }
     };
     return () => socket.close();
   }, [fixtureMode]);
@@ -139,14 +144,21 @@ function DrivePage({ frames, fixtureMode }: { frames: readonly TruthFrame[]; fix
     const loop = window.setInterval(() => {
       if (!active) return;
       const held = keys.current;
-      transmit({ type: 'control', s: (held.has('a') || held.has('arrowleft') ? -1 : 0) + (held.has('d') || held.has('arrowright') ? 1 : 0), t: held.has('w') || held.has('arrowup') ? 1 : 0, b: held.has('s') || held.has('arrowdown') ? 1 : 0, rev: false });
+      transmit({ type: 'control', s: (held.has('a') || held.has('arrowleft') ? -1 : 0) + (held.has('d') || held.has('arrowright') ? 1 : 0), t: held.has('w') || held.has('arrowup') ? 1 : 0, b: held.has('s') || held.has('arrowdown') ? 1 : 0, r: false });
     }, 50);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); clearInterval(loop); };
   }, [active, transmit]);
-  const egoId = frames.at(-1)?.actors.find((actor) => actor.id.includes('ego'))?.id ?? frames.at(-1)?.actors[0]?.id ?? null;
-  return <main className="drive-page"><TwinScene frames={frames} followActorId={egoId} cameraMode={cameraMode} /><div className="drive-hud">
+  const fixtureEgoId = frames.at(-1)?.actors.find((actor) => actor.id.includes('ego'))?.id ?? frames.at(-1)?.actors[0]?.id ?? null;
+  return <main className="drive-page"><TwinScene frames={frames} followActorId={egoActorId ?? fixtureEgoId} cameraMode={cameraMode} /><div className="drive-hud">
     <div className="mode-label">DRIVING MODE <span>{active ? 'SESSION ACTIVE' : fixtureMode ? 'FIXTURE READY' : 'SESSION READY'}</span></div><div className="speed"><strong>{Math.round(telemetry.speed * 3.6)}</strong><span>km/h</span></div><div className="gear">GEAR {telemetry.gear}</div>
-    <div className="drive-actions"><button className={active ? 'danger' : 'primary'} onClick={() => { transmit({ type: active ? 'end_session' : 'start_session', vehicle: 'vehicle.sedan' }); if (fixtureMode) setActive(!active); }}>{active ? 'End session' : 'Start drive session'}</button><button onClick={() => setCameraMode(cameraMode === 'chase' ? 'first-person' : 'chase')}>{cameraMode === 'chase' ? 'Chase camera' : 'First-person camera'}</button></div>
+    <div className="drive-actions"><button className={active ? 'danger' : 'primary'} onClick={() => {
+      if (active) transmit({ type: 'end_session' });
+      else {
+        const end = new Date();
+        transmit({ type: 'start_session', start: new Date(end.getTime() - 3_600_000).toISOString(), end: end.toISOString(), vehicle: 'vehicle.sedan' });
+      }
+      if (fixtureMode) setActive(!active);
+    }}>{active ? 'End session' : 'Start drive session'}</button><button onClick={() => setCameraMode(cameraMode === 'chase' ? 'first-person' : 'chase')}>{cameraMode === 'chase' ? 'Chase camera' : 'First-person camera'}</button></div>
     <div className="key-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive</div>
   </div></main>;
 }
@@ -161,7 +173,15 @@ export default function App() {
   const timestamp = useMemo(() => new Date(twin.clock * 1000).toISOString().slice(11, 19), [twin.clock]);
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><span className="brand-mark">SF</span><div><strong>Richmond V2X Twin</strong><small>SimForge · truth synchronized</small></div></div><nav>{(['map','cameras','drive'] as Page[]).map((item) => <button key={item} className={page === item ? 'active' : ''} onClick={() => setPage(item)}>{item === 'cameras' ? 'Cameras · 4' : item}</button>)}</nav><div className="connection"><i className={twin.connected ? 'online' : ''}/>{fixtureMode ? 'FIXTURE REPLAY' : twin.connected ? 'CONNECTED' : 'OFFLINE'}</div></header>
-    <section className="replay-bar"><button className={twin.mode === 'live' ? 'active' : ''} onClick={() => { twin.setMode('live'); twin.send({ type: 'twin_live' }); }}>Live</button><button className={twin.mode === 'replay' ? 'active' : ''} onClick={() => { twin.setMode('replay'); twin.send({ type: 'twin_replay', start: twin.clock, speed: 1 }); }}>Replay</button><input aria-label="Replay clock" type="range" min="0" max="40" step=".05" value={twin.clock} onChange={(event) => { const value = Number(event.target.value); twin.setClock(value); twin.send({ type: 'twin_replay', start: value, speed: 1 }); }} /><time>{timestamp}</time></section>
+    <section className="replay-bar"><button className={twin.mode === 'live' ? 'active' : ''} onClick={() => { twin.setMode('live'); twin.send({ type: 'twin_live' }); }}>Live</button><button className={twin.mode === 'replay' ? 'active' : ''} onClick={() => {
+      twin.setMode('replay');
+      const start = new Date(); start.setUTCHours(0, 0, twin.clock, 0);
+      twin.send({ type: 'twin_replay', start: start.toISOString(), speed: 1 });
+    }}>Replay</button><input aria-label="Replay clock" type="range" min="0" max="86400" step="1" value={twin.clock} onChange={(event) => {
+      const value = Number(event.target.value); twin.setClock(value);
+      const start = new Date(); start.setUTCHours(0, 0, value, 0);
+      twin.send({ type: 'twin_replay', start: start.toISOString(), speed: 1 });
+    }} /><time>{timestamp}</time></section>
     {page === 'cameras' && <CameraPage frames={twin.frames} cameras={twin.cameras}/>}
     {page === 'drive' && <DrivePage frames={twin.frames} fixtureMode={fixtureMode}/>}
     {page === 'map' && <main className="map-page"><TwinScene frames={twin.frames}/><ZoneEditor send={twin.send}/><OperationsPanel send={twin.send}/><aside className="objects-panel"><h2>Truth objects</h2>{actorList.map((actor) => <button key={actor.id} onClick={() => setSelectedActor(actor)}><span>{actor.class}</span>{actor.id}</button>)}</aside>{selectedActor && <aside className="detail-panel"><button onClick={() => setSelectedActor(null)}>×</button><small>OBJECT DETAIL</small><h2>{selectedActor.id}</h2><dl><dt>Class</dt><dd>{selectedActor.class}</dd><dt>Dimensions</dt><dd>{selectedActor.dims.l} × {selectedActor.dims.w} × {selectedActor.dims.h} m</dd><dt>Source</dt><dd>{/mirror|ghost/.test(selectedActor.id) ? 'Mirrored V2X detection' : 'SimForge truth'}</dd></dl></aside>}</main>}
