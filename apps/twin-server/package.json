@@ -1,0 +1,28 @@
+{
+  "name": "@v2x/twin-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "V2X digital-twin server on the SimForge engine: WS :8765 (/drive, /twin) + MJPEG camera feeds :8090. Replaces the CARLA digital_twin_bridge.",
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@msgpack/msgpack": "^3.1.3",
+    "@simforge/compiler": "file:/home/path/worktrees/twinserver-engine/packages/compiler",
+    "@simforge/engine": "file:/home/path/worktrees/twinserver-engine/packages/engine",
+    "@simforge/maps": "file:/home/path/worktrees/twinserver-engine/packages/maps",
+    "@simforge/training-env": "file:/home/path/worktrees/twinserver-engine/packages/training-env",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^3.0.0"
+  }
+}
