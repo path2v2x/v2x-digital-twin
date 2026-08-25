@@ -15,7 +15,9 @@ function mapBundlePlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/map', (request, response, next) => {
         const relative = normalize(decodeURIComponent((request.url ?? '/').split('?')[0])).replace(/^(\.\.(\/|\\|$))+/, '');
-        const target = join(MAP_BUNDLE, relative === '/' ? 'browser-manifest' : relative);
+        const target = relative === '/browser-manifest'
+          ? join(MAP_BUNDLE, 'browser-manifest')
+          : join(MAP_BUNDLE, 'browser/3d', relative);
         if (!target.startsWith(MAP_BUNDLE)) return next();
         try {
           if (!statSync(target).isFile()) return next();

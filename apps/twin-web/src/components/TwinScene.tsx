@@ -99,5 +99,8 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
       if (camera) applyCalibratedCamera(viewer, camera);
       onReady?.(viewer);
     }}
+    onMapLoaded={() => {
+      if (camera && viewerRef.current) applyCalibratedCamera(viewerRef.current, camera);
+    }}
   />;
 }

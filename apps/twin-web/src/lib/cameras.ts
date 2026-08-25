@@ -44,12 +44,15 @@ export function calibratedPose(camera: TwinCamera): CalibratedPose {
 
 export function applyCalibratedCamera(viewer: CityViewer, camera: TwinCamera): void {
   const pose = calibratedPose(camera);
+  const groundHeight = viewer.getGroundIndex()?.sample(pose.position[0], pose.position[2]) ?? 0;
+  const position: [number, number, number] = [pose.position[0], pose.position[1] + groundHeight, pose.position[2]];
+  const target: [number, number, number] = [pose.target[0], pose.target[1] + groundHeight, pose.target[2]];
   viewer.setCameraPoseConstraintsEnabled(false);
   viewer.controls.setEnabled(false);
-  viewer.camera.position.set(...pose.position);
+  viewer.camera.position.set(...position);
   viewer.camera.fov = pose.verticalFovDeg;
   viewer.camera.aspect = camera.intrinsics.width / camera.intrinsics.height;
   viewer.camera.updateProjectionMatrix();
-  viewer.camera.lookAt(new Vector3(...pose.target));
-  viewer.controls.target.set(...pose.target);
+  viewer.camera.lookAt(new Vector3(...target));
+  viewer.controls.target.set(...target);
 }

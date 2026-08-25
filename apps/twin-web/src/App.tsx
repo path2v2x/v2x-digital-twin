@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TwinScene } from './components/TwinScene';
-import { CAMERAS } from './lib/cameras';
+import { CAMERAS, type TwinCamera } from './lib/cameras';
 import { decodeTruthFrame, type TruthFrame, type TruthActor, TruthFrameStream } from './lib/truth';
 import { sceneToWgs84 } from './lib/coordinates';
 
@@ -28,6 +28,7 @@ function useTwinSocket(fixtureMode: boolean) {
   const [mode, setMode] = useState<'live' | 'replay'>('live');
   const [alerts, setAlerts] = useState<Alert[]>(fixtureMode ? [{ id: 'fixture-eva', title: 'EVA priority vehicle', message: 'Emergency vehicle approaching junction 61 from the south.' }] : []);
   const [telemetry, setTelemetry] = useState({ speed: 11.9, gear: 2 });
+  const [cameras, setCameras] = useState<readonly TwinCamera[]>(CAMERAS);
   const streamRef = useRef(new TruthFrameStream());
 
   useEffect(() => {
@@ -47,6 +48,12 @@ function useTwinSocket(fixtureMode: boolean) {
         if (message.type === 'twin_mode') setMode(message.mode);
         if (message.type === 'eva_alert') setAlerts((current) => [...current, { id: crypto.randomUUID(), title: message.title ?? 'EVA alert', message: message.message ?? 'Emergency vehicle activity' }]);
         if (message.type === 'telemetry') setTelemetry({ speed: Number(message.speed ?? 0), gear: Number(message.gear ?? 0) });
+        if (message.type === 'twin_cameras' && Array.isArray(message.cameras)) {
+          setCameras(message.cameras.map((camera: Partial<TwinCamera> & { id: TwinCamera['id']; feed_url?: string; stream_url?: string }) => {
+            const fallback = CAMERAS.find((candidate) => candidate.id === camera.id) ?? CAMERAS[0]!;
+            return { ...fallback, ...camera, streamUrl: camera.streamUrl ?? camera.feed_url ?? camera.stream_url ?? fallback.streamUrl };
+          }));
+        }
       } else {
         const decoded = streamRef.current.push(new Uint8Array(event.data));
         if (decoded.length) setFrames((current) => [...current, ...decoded].slice(-2));
@@ -56,12 +63,12 @@ function useTwinSocket(fixtureMode: boolean) {
   }, [fixtureMode]);
 
   const send = useCallback((message: object) => socketRef.current?.readyState === WebSocket.OPEN && socketRef.current.send(JSON.stringify(message)), []);
-  return { frames, connected: fixtureMode || connected, clock, mode, alerts, telemetry, send, setClock, setMode };
+  return { frames, connected: fixtureMode || connected, clock, mode, alerts, telemetry, cameras, send, setClock, setMode };
 }
 
-function CameraPage({ frames }: { frames: readonly TruthFrame[] }) {
+function CameraPage({ frames, cameras }: { frames: readonly TruthFrame[]; cameras: readonly TwinCamera[] }) {
   return <main className="camera-grid" aria-label="Calibrated real and digital camera comparisons">
-    {CAMERAS.map((camera) => <article className="camera-card" key={camera.id} data-testid={`camera-${camera.id}`}>
+    {cameras.map((camera) => <article className="camera-card" key={camera.id} data-testid={`camera-${camera.id}`}>
       <header><strong>{camera.id.toUpperCase()}</strong><span>CALIBRATED · 2560 × 1920</span></header>
       <div className="comparison">
         <figure><div className="feed-wrap"><img src={camera.streamUrl} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/fixture-camera.jpg'; }} alt={`${camera.id} real MJPEG stream`} /><span className="live-badge">● REAL · LIVE</span></div><figcaption>Site camera</figcaption></figure>
@@ -101,21 +108,45 @@ function OperationsPanel({ send }: { send(message: object): void }) {
   </aside>;
 }
 
-function DrivePage({ frames, telemetry, send }: { frames: readonly TruthFrame[]; telemetry: { speed: number; gear: number }; send(message: object): void }) {
+function DrivePage({ frames, fixtureMode }: { frames: readonly TruthFrame[]; fixtureMode: boolean }) {
   const [active, setActive] = useState(false);
   const [cameraMode, setCameraMode] = useState<'chase' | 'first-person'>('chase');
+  const [telemetry, setTelemetry] = useState({ speed: 11.9, gear: 2 });
   const keys = useRef(new Set<string>());
+  const socketRef = useRef<WebSocket | null>(null);
+  const transmit = useCallback((message: object) => {
+    if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify(message));
+  }, []);
+
+  useEffect(() => {
+    if (fixtureMode) return;
+    const socket = new WebSocket(import.meta.env.VITE_DRIVE_WS_URL ?? 'ws://localhost:8765/drive');
+    socketRef.current = socket;
+    socket.onmessage = (event) => {
+      if (typeof event.data !== 'string') return;
+      const message = JSON.parse(event.data);
+      if (message.type === 'telemetry') setTelemetry({ speed: Number(message.speed ?? 0), gear: Number(message.gear ?? 0) });
+      if (message.type === 'session_ready') setActive(true);
+      if (message.type === 'session_ended') setActive(false);
+    };
+    return () => socket.close();
+  }, [fixtureMode]);
+
   useEffect(() => {
     const down = (event: KeyboardEvent) => { if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(event.key.toLowerCase())) { keys.current.add(event.key.toLowerCase()); event.preventDefault(); } };
     const up = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase());
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
-    const loop = window.setInterval(() => { if (!active) return; const held = keys.current; send({ type: 'control', s: (held.has('a') || held.has('arrowleft') ? -1 : 0) + (held.has('d') || held.has('arrowright') ? 1 : 0), t: held.has('w') || held.has('arrowup') ? 1 : 0, b: held.has('s') || held.has('arrowdown') ? 1 : 0, rev: false }); }, 50);
+    const loop = window.setInterval(() => {
+      if (!active) return;
+      const held = keys.current;
+      transmit({ type: 'control', s: (held.has('a') || held.has('arrowleft') ? -1 : 0) + (held.has('d') || held.has('arrowright') ? 1 : 0), t: held.has('w') || held.has('arrowup') ? 1 : 0, b: held.has('s') || held.has('arrowdown') ? 1 : 0, rev: false });
+    }, 50);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); clearInterval(loop); };
-  }, [active, send]);
+  }, [active, transmit]);
   const egoId = frames.at(-1)?.actors.find((actor) => actor.id.includes('ego'))?.id ?? frames.at(-1)?.actors[0]?.id ?? null;
   return <main className="drive-page"><TwinScene frames={frames} followActorId={egoId} cameraMode={cameraMode} /><div className="drive-hud">
-    <div className="mode-label">DRIVING MODE <span>{active ? 'SESSION ACTIVE' : 'FIXTURE READY'}</span></div><div className="speed"><strong>{Math.round(telemetry.speed * 3.6)}</strong><span>km/h</span></div><div className="gear">GEAR {telemetry.gear}</div>
-    <div className="drive-actions"><button className={active ? 'danger' : 'primary'} onClick={() => { send({ type: active ? 'end_session' : 'start_session', vehicle: 'vehicle.sedan' }); setActive(!active); }}>{active ? 'End session' : 'Start drive session'}</button><button onClick={() => setCameraMode(cameraMode === 'chase' ? 'first-person' : 'chase')}>{cameraMode === 'chase' ? 'Chase camera' : 'First-person camera'}</button></div>
+    <div className="mode-label">DRIVING MODE <span>{active ? 'SESSION ACTIVE' : fixtureMode ? 'FIXTURE READY' : 'SESSION READY'}</span></div><div className="speed"><strong>{Math.round(telemetry.speed * 3.6)}</strong><span>km/h</span></div><div className="gear">GEAR {telemetry.gear}</div>
+    <div className="drive-actions"><button className={active ? 'danger' : 'primary'} onClick={() => { transmit({ type: active ? 'end_session' : 'start_session', vehicle: 'vehicle.sedan' }); if (fixtureMode) setActive(!active); }}>{active ? 'End session' : 'Start drive session'}</button><button onClick={() => setCameraMode(cameraMode === 'chase' ? 'first-person' : 'chase')}>{cameraMode === 'chase' ? 'Chase camera' : 'First-person camera'}</button></div>
     <div className="key-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive</div>
   </div></main>;
 }
@@ -123,15 +154,16 @@ function DrivePage({ frames, telemetry, send }: { frames: readonly TruthFrame[];
 export default function App() {
   const fixtureMode = new URLSearchParams(location.search).get('fixture') !== '0';
   const twin = useTwinSocket(fixtureMode);
-  const [page, setPage] = useState<Page>('cameras');
+  const requestedPage = new URLSearchParams(location.search).get('page');
+  const [page, setPage] = useState<Page>(requestedPage === 'map' || requestedPage === 'drive' ? requestedPage : 'cameras');
   const [selectedActor, setSelectedActor] = useState<TruthActor | null>(null);
   const actorList = twin.frames.at(-1)?.actors ?? [];
   const timestamp = useMemo(() => new Date(twin.clock * 1000).toISOString().slice(11, 19), [twin.clock]);
   return <div className="app-shell">
     <header className="topbar"><div className="brand"><span className="brand-mark">SF</span><div><strong>Richmond V2X Twin</strong><small>SimForge · truth synchronized</small></div></div><nav>{(['map','cameras','drive'] as Page[]).map((item) => <button key={item} className={page === item ? 'active' : ''} onClick={() => setPage(item)}>{item === 'cameras' ? 'Cameras · 4' : item}</button>)}</nav><div className="connection"><i className={twin.connected ? 'online' : ''}/>{fixtureMode ? 'FIXTURE REPLAY' : twin.connected ? 'CONNECTED' : 'OFFLINE'}</div></header>
     <section className="replay-bar"><button className={twin.mode === 'live' ? 'active' : ''} onClick={() => { twin.setMode('live'); twin.send({ type: 'twin_live' }); }}>Live</button><button className={twin.mode === 'replay' ? 'active' : ''} onClick={() => { twin.setMode('replay'); twin.send({ type: 'twin_replay', start: twin.clock, speed: 1 }); }}>Replay</button><input aria-label="Replay clock" type="range" min="0" max="40" step=".05" value={twin.clock} onChange={(event) => { const value = Number(event.target.value); twin.setClock(value); twin.send({ type: 'twin_replay', start: value, speed: 1 }); }} /><time>{timestamp}</time></section>
-    {page === 'cameras' && <CameraPage frames={twin.frames}/>} 
-    {page === 'drive' && <DrivePage frames={twin.frames} telemetry={twin.telemetry} send={twin.send}/>} 
+    {page === 'cameras' && <CameraPage frames={twin.frames} cameras={twin.cameras}/>}
+    {page === 'drive' && <DrivePage frames={twin.frames} fixtureMode={fixtureMode}/>}
     {page === 'map' && <main className="map-page"><TwinScene frames={twin.frames}/><ZoneEditor send={twin.send}/><OperationsPanel send={twin.send}/><aside className="objects-panel"><h2>Truth objects</h2>{actorList.map((actor) => <button key={actor.id} onClick={() => setSelectedActor(actor)}><span>{actor.class}</span>{actor.id}</button>)}</aside>{selectedActor && <aside className="detail-panel"><button onClick={() => setSelectedActor(null)}>×</button><small>OBJECT DETAIL</small><h2>{selectedActor.id}</h2><dl><dt>Class</dt><dd>{selectedActor.class}</dd><dt>Dimensions</dt><dd>{selectedActor.dims.l} × {selectedActor.dims.w} × {selectedActor.dims.h} m</dd><dt>Source</dt><dd>{/mirror|ghost/.test(selectedActor.id) ? 'Mirrored V2X detection' : 'SimForge truth'}</dd></dl></aside>}</main>}
     <aside className="alerts"><h2>EVA alerts <span>{twin.alerts.length}</span></h2>{twin.alerts.map((alert) => <article key={alert.id}><strong>{alert.title}</strong><p>{alert.message}</p></article>)}</aside>
   </div>;

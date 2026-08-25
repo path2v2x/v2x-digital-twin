@@ -29,7 +29,8 @@ describe('frozen V2X coordinate contract', () => {
       const yaw = pose.yawDeg * Math.PI / 180;
       expect(pose.position[0] - camera.twin_pose.forward_offset_m * Math.cos(yaw)).toBeCloseTo(projectedPole.x, 10);
       expect(pose.position[2] - camera.twin_pose.forward_offset_m * Math.sin(yaw)).toBeCloseTo(projectedPole.y, 10);
-      expect(pose.verticalFovDeg).toBeCloseTo(71.781, 3);
+      // Pinhole vertical FOV; 0.001° guards intrinsics while tolerating floating-point trig.
+      expect(pose.verticalFovDeg).toBeCloseTo(71.832353, 3);
     }
   });
 });
