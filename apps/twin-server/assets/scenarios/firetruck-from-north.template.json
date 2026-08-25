@@ -180,7 +180,7 @@
         "kind": "openscenario",
         "fileName": "firetruck_from_north.xosc",
         "sha256": "712cc5c1e6b5bcaeccee473f971f4ba78fa8ec66d77fed322cae7c86af66813b",
-        "path": "/home/path/V2XCarla/v2x-backend/apps/bridge/scenarios/firetruck_from_north.xosc"
+        "path": "apps/twin-server/assets/scenarios/firetruck-from-north.template.json"
       },
       "semanticMap": {
         "AcquirePositionAction": "firetruck laneRef + initialRoute lanePath through the junction \u2014 the engine's lane-chain follower reproduces the GlobalRoutePlanner route; the default collision-avoidance follower (IDM) reproduces BasicAgent's stop-behind-obstacle behavior; goal arrival verified in the clear-road evidence run",
@@ -192,7 +192,7 @@
         "ReachPositionCondition tolerance 6 m": "arrival check in the verification harness",
         "basic_agent_control": "engine lane-route follower with default IDM collision avoidance and driverProfile 'cautious' \u2014 slows and stops behind a standing ego instead of ploughing through"
       },
-      "coordinateNote": "scene coordinates are the xosc CARLA world positions used verbatim (scene frame z = CARLA y); authored against V2XCarla Richmond_Field_Station_Richmond_CA \u2014 see docs/v2x-scenario-migration.md for the digest-pinned coordinate contract"
+      "coordinateNote": "scene coordinates are the xosc CARLA world positions used verbatim (scene frame z = CARLA y); authored against V2XCarla Richmond_Field_Station_Richmond_CA — see docs/twin-protocol-v2.md for the coordinate contract"
     }
   }
 }

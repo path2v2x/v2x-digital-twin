@@ -41,7 +41,7 @@ if aws s3api get-bucket-policy --bucket "${STATE_BUCKET}" >/dev/null 2>&1; then
   aws s3api delete-bucket-policy --bucket "${STATE_BUCKET}" >/dev/null
 fi
 
-printf '%s' '{"objects":[],"bridge_status":{"status":"disconnected","carla_fps":0,"objects_tracked":0,"cameras_active":0,"last_heartbeat":null},"updated_at":null}' > "${WORKDIR}/state.json"
+printf '%s' '{"objects":[],"twin_status":{"status":"disconnected","objects_tracked":0,"cameras_active":0,"last_heartbeat":null},"updated_at":null}' > "${WORKDIR}/state.json"
 printf '%s' '{"road_network":[]}' > "${WORKDIR}/map-data.json"
 
 aws s3api put-object \

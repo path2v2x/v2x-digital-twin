@@ -1,7 +1,0 @@
-numpy
-Pillow
-requests
-boto3
-websockets
-pytest
-pytest-asyncio

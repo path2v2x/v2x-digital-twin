@@ -109,7 +109,7 @@
         "kind": "openscenario",
         "fileName": "sample.xosc",
         "sha256": "273506da172fc3251ad724a266beafcf1bd25b6fd3fde13a40da2523a71503db",
-        "path": "/home/path/V2XCarla/v2x-backend/apps/bridge/scenarios/sample.xosc"
+        "path": "apps/twin-server/assets/scenarios/sample-npc-cruise.template.json"
       },
       "semanticMap": {
         "Init SpeedAction 0 m/s": "role initialSpeedKph 0",
@@ -118,7 +118,7 @@
         "Storyboard StopTrigger 30 s": "clipSeconds 30",
         "EnvironmentAction ClearNoon": "environment clear/noon"
       },
-      "coordinateNote": "scene coordinates are the xosc CARLA world positions used verbatim (scene frame z = CARLA y); authored against V2XCarla Richmond_Field_Station_Richmond_CA \u2014 see docs/v2x-scenario-migration.md for the digest-pinned coordinate contract"
+      "coordinateNote": "scene coordinates are the xosc CARLA world positions used verbatim (scene frame z = CARLA y); authored against V2XCarla Richmond_Field_Station_Richmond_CA — see docs/twin-protocol-v2.md for the coordinate contract"
     }
   }
 }

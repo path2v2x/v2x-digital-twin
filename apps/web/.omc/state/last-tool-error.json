@@ -1,7 +1,0 @@
-{
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"sshpass -p 'path123' scp /Users/maikyon/Documents/Programming/v2x-backend/apps/bridge/digital_twin_bridge/drive_main.py path@100.72.252.40:/home/path/V2XCarla/v2x-backend/apps/bridge/digit...",
-  "error": "Exit code 255",
-  "timestamp": "2026-04-29T19:05:50.131Z",
-  "retry_count": 1
-}
