@@ -300,6 +300,9 @@ export class DriveSession {
     this.egoId = ego.id;
     this.active = true;
     this.lastControl = { steer: 0, throttle: 0, brake: 0 };
+    // v1 semantics: the ego stands still until the first control message. Without
+    // this hold the engine would cruise the freeform route autonomously.
+    world.actControl(ego.id, { throttle: 0, brake: 1, steer: 0 }, false);
 
     return {
       type: 'session_ready',

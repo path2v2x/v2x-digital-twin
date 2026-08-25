@@ -27,7 +27,7 @@ function useTwinSocket(fixtureMode: boolean) {
   const [clock, setClock] = useState(0);
   const [mode, setMode] = useState<'live' | 'replay'>('live');
   const [alerts, setAlerts] = useState<Alert[]>(fixtureMode ? [{ id: 'fixture-eva', title: 'EVA priority vehicle', message: 'Emergency vehicle approaching junction 61 from the south.' }] : []);
-  const [telemetry, setTelemetry] = useState({ speed: 11.9, gear: 2 });
+  const [telemetry, setTelemetry] = useState({ speed: 43, gear: 2 });
   const [cameras, setCameras] = useState<readonly TwinCamera[]>(CAMERAS);
   const streamRef = useRef(new TruthFrameStream());
 
@@ -98,26 +98,37 @@ function ZoneEditor({ send }: { send(message: object): void }) {
   }}><span>DRAWING · {vertices.length} VERTICES</span></div>}</div>;
 }
 
-function OperationsPanel({ send }: { send(message: object): void }) {
-  const [weather, setWeather] = useState('clear');
-  const [traffic, setTraffic] = useState('medium');
-  return <aside className="operations-panel">
-    <h2>World controls</h2>
-    <label>Weather<select value={weather} onChange={(event) => { setWeather(event.target.value); send({ type: 'set_weather', weather: event.target.value }); }}><option>clear</option><option>overcast</option><option>rain</option><option>fog</option></select></label>
-    <label>Ambient traffic<select value={traffic} onChange={(event) => { setTraffic(event.target.value); send({ type: 'traffic_preset', preset: event.target.value }); }}><option>none</option><option>light</option><option>medium</option><option>heavy</option><option>rush-hour</option></select></label>
-    <button onClick={() => send({ type: 'place_scenario', scenario: 'firetruck-northbound' })}>Place firetruck scenario</button>
-    <button onClick={() => send({ type: 'place_object', object_class: 'car' })}>Place vehicle</button>
-    <button onClick={() => send({ type: 'play_trajectory', trajectory: 'sample-npc-cruise' })}>Play GPS trajectory</button>
-  </aside>;
+const WEATHER_PRESETS: Record<string, Record<string, number>> = {
+  clear: { cloudiness: 10, precipitation: 0, fog_density: 0, sun_altitude_angle: 75 },
+  overcast: { cloudiness: 85, precipitation: 0, fog_density: 0, sun_altitude_angle: 45 },
+  rain: { cloudiness: 90, precipitation: 80, precipitation_deposits: 60, fog_density: 0, sun_altitude_angle: 35 },
+  fog: { cloudiness: 60, precipitation: 0, fog_density: 40, fog_distance: 20, sun_altitude_angle: 25 },
+};
+
+/** Contract of the shared /drive socket: drive-page controls + map-page world operations. */
+export interface DriveSocket {
+  active: boolean;
+  egoActorId: string | null;
+  telemetry: { speed: number; gear: number };
+  transmit(message: object): void;
+  /** Session-scoped operation: sends now if a session is live, else auto-starts one and queues. */
+  sendOp(message: object): void;
+  startSession(): void;
+  endSession(): void;
 }
 
-function DrivePage({ frames, fixtureMode }: { frames: readonly TruthFrame[]; fixtureMode: boolean }) {
-  const [active, setActive] = useState(false);
-  const [cameraMode, setCameraMode] = useState<'chase' | 'first-person'>('chase');
-  const [telemetry, setTelemetry] = useState({ speed: 11.9, gear: 2 });
-  const [egoActorId, setEgoActorId] = useState<string | null>(null);
-  const keys = useRef(new Set<string>());
+/** One shared /drive socket for the whole app. Server semantics are session-scoped
+ * (verbatim from the v1 bridge), so map-page operations auto-start a session and
+ * queue until session_ready. */
+function useDriveSocket(fixtureMode: boolean): DriveSocket {
   const socketRef = useRef<WebSocket | null>(null);
+  const [active, setActive] = useState(false);
+  const [egoActorId, setEgoActorId] = useState<string | null>(null);
+  const [telemetry, setTelemetry] = useState({ speed: 0, gear: 0 });
+  const pendingRef = useRef<object[]>([]);
+  const startedRef = useRef(false);
+  const activeRef = useRef(false);
+
   const transmit = useCallback((message: object) => {
     if (socketRef.current?.readyState === WebSocket.OPEN) socketRef.current.send(JSON.stringify(message));
   }, []);
@@ -130,42 +141,86 @@ function DrivePage({ frames, fixtureMode }: { frames: readonly TruthFrame[]; fix
       if (typeof event.data !== 'string') return;
       const message = JSON.parse(event.data);
       if (message.type === 'telemetry') setTelemetry({ speed: Number(message.speed ?? 0), gear: Number(message.gear ?? 0) });
-      if (message.type === 'session_ready') { setActive(true); setEgoActorId(String(message.vehicle_id)); }
+      if (message.type === 'session_ready') {
+        activeRef.current = true; setActive(true); setEgoActorId(String(message.vehicle_id));
+        for (const queued of pendingRef.current.splice(0)) socket.send(JSON.stringify(queued));
+      }
       if (message.type === 'respawned' || message.type === 'teleported') setEgoActorId(String(message.vehicle_id));
-      if (message.type === 'session_ended') { setActive(false); setEgoActorId(null); }
+      if (message.type === 'session_ended') { activeRef.current = false; startedRef.current = false; setActive(false); setEgoActorId(null); }
+      if (message.type === 'error') console.warn('[drive]', message.message);
     };
+    socket.onclose = () => { activeRef.current = false; startedRef.current = false; setActive(false); setEgoActorId(null); };
     return () => socket.close();
   }, [fixtureMode]);
+
+  const startSession = useCallback(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+    const end = new Date();
+    transmit({ type: 'start_session', start: new Date(end.getTime() - 3_600_000).toISOString(), end: end.toISOString(), vehicle: 'vehicle.sedan' });
+  }, [transmit]);
+
+  /** Session-scoped operation: sends now if a session is live, else auto-starts one and queues. */
+  const sendOp = useCallback((message: object) => {
+    if (activeRef.current) { transmit(message); return; }
+    pendingRef.current.push(message);
+    startSession();
+  }, [transmit, startSession]);
+
+  const endSession = useCallback(() => transmit({ type: 'end_session' }), [transmit]);
+
+  return { active, egoActorId, telemetry, transmit, sendOp, startSession, endSession };
+}
+
+
+function OperationsPanel({ send }: { send(message: object): void }) {
+  const [weather, setWeather] = useState('clear');
+  const [traffic, setTraffic] = useState('medium');
+  return <aside className="operations-panel">
+    <h2>World controls</h2>
+    <label>Weather<select value={weather} onChange={(event) => { setWeather(event.target.value); send({ type: 'set_weather', params: WEATHER_PRESETS[event.target.value] ?? WEATHER_PRESETS['clear'] }); }}><option>clear</option><option>overcast</option><option>rain</option><option>fog</option></select></label>
+    <label>Ambient traffic<select value={traffic} onChange={(event) => { setTraffic(event.target.value); send({ type: 'spawn_traffic', preset: event.target.value }); }}><option>none</option><option>light</option><option>medium</option><option>heavy</option><option>chaos</option></select></label>
+    <button onClick={() => send({ type: 'load_scenario', file: 'firetruck-from-north.template.json' })}>Place firetruck scenario</button>
+    <button onClick={() => send({ type: 'spawn_object', blueprint: 'vehicle.tesla.model3' })}>Place vehicle</button>
+    <button onClick={() => send({ type: 'start_trajectory', file: 'event1.json', vehicle: 'vehicle.tesla.model3' })}>Play GPS trajectory</button>
+  </aside>;
+}
+
+function DrivePage({ frames, fixtureMode, drive }: { frames: readonly TruthFrame[]; fixtureMode: boolean; drive: DriveSocket }) {
+  const [fixtureActive, setFixtureActive] = useState(false);
+  const [cameraMode, setCameraMode] = useState<'chase' | 'first-person'>('chase');
+  const keys = useRef(new Set<string>());
+  const active = fixtureMode ? fixtureActive : drive.active;
+  const telemetry = fixtureMode ? { speed: 43, gear: 2 } : drive.telemetry;
+  const { transmit } = drive;
 
   useEffect(() => {
     const down = (event: KeyboardEvent) => { if (['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(event.key.toLowerCase())) { keys.current.add(event.key.toLowerCase()); event.preventDefault(); } };
     const up = (event: KeyboardEvent) => keys.current.delete(event.key.toLowerCase());
     window.addEventListener('keydown', down); window.addEventListener('keyup', up);
     const loop = window.setInterval(() => {
-      if (!active) return;
+      if (!active || fixtureMode) return;
       const held = keys.current;
       transmit({ type: 'control', s: (held.has('a') || held.has('arrowleft') ? -1 : 0) + (held.has('d') || held.has('arrowright') ? 1 : 0), t: held.has('w') || held.has('arrowup') ? 1 : 0, b: held.has('s') || held.has('arrowdown') ? 1 : 0, r: false });
     }, 50);
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); clearInterval(loop); };
-  }, [active, transmit]);
+  }, [active, fixtureMode, transmit]);
   const fixtureEgoId = frames.at(-1)?.actors.find((actor) => actor.id.includes('ego'))?.id ?? frames.at(-1)?.actors[0]?.id ?? null;
-  return <main className="drive-page"><TwinScene frames={frames} followActorId={egoActorId ?? fixtureEgoId} cameraMode={cameraMode} /><div className="drive-hud">
-    <div className="mode-label">DRIVING MODE <span>{active ? 'SESSION ACTIVE' : fixtureMode ? 'FIXTURE READY' : 'SESSION READY'}</span></div><div className="speed"><strong>{Math.round(telemetry.speed * 3.6)}</strong><span>km/h</span></div><div className="gear">GEAR {telemetry.gear}</div>
+  return <main className="drive-page"><TwinScene frames={frames} followActorId={drive.egoActorId ?? fixtureEgoId} cameraMode={cameraMode} /><div className="drive-hud">
+    <div className="mode-label">DRIVING MODE <span>{active ? 'SESSION ACTIVE' : fixtureMode ? 'FIXTURE READY' : 'SESSION READY'}</span></div><div className="speed"><strong>{Math.round(telemetry.speed)}</strong><span>km/h</span></div><div className="gear">GEAR {telemetry.gear}</div>
     <div className="drive-actions"><button className={active ? 'danger' : 'primary'} onClick={() => {
-      if (active) transmit({ type: 'end_session' });
-      else {
-        const end = new Date();
-        transmit({ type: 'start_session', start: new Date(end.getTime() - 3_600_000).toISOString(), end: end.toISOString(), vehicle: 'vehicle.sedan' });
-      }
-      if (fixtureMode) setActive(!active);
+      if (fixtureMode) setFixtureActive(!fixtureActive);
+      else if (drive.active) drive.endSession();
+      else drive.startSession();
     }}>{active ? 'End session' : 'Start drive session'}</button><button onClick={() => setCameraMode(cameraMode === 'chase' ? 'first-person' : 'chase')}>{cameraMode === 'chase' ? 'Chase camera' : 'First-person camera'}</button></div>
     <div className="key-hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows to drive</div>
   </div></main>;
 }
 
 export default function App() {
-  const fixtureMode = new URLSearchParams(location.search).get('fixture') !== '0';
+  const fixtureMode = new URLSearchParams(location.search).get('fixture') === '1';
   const twin = useTwinSocket(fixtureMode);
+  const drive = useDriveSocket(fixtureMode);
   const requestedPage = new URLSearchParams(location.search).get('page');
   const [page, setPage] = useState<Page>(requestedPage === 'map' || requestedPage === 'drive' ? requestedPage : 'cameras');
   const [selectedActor, setSelectedActor] = useState<TruthActor | null>(null);
@@ -183,8 +238,8 @@ export default function App() {
       twin.send({ type: 'twin_replay', start: start.toISOString(), speed: 1 });
     }} /><time>{timestamp}</time></section>
     {page === 'cameras' && <CameraPage frames={twin.frames} cameras={twin.cameras}/>}
-    {page === 'drive' && <DrivePage frames={twin.frames} fixtureMode={fixtureMode}/>}
-    {page === 'map' && <main className="map-page"><TwinScene frames={twin.frames}/><ZoneEditor send={twin.send}/><OperationsPanel send={twin.send}/><aside className="objects-panel"><h2>Truth objects</h2>{actorList.map((actor) => <button key={actor.id} onClick={() => setSelectedActor(actor)}><span>{actor.class}</span>{actor.id}</button>)}</aside>{selectedActor && <aside className="detail-panel"><button onClick={() => setSelectedActor(null)}>×</button><small>OBJECT DETAIL</small><h2>{selectedActor.id}</h2><dl><dt>Class</dt><dd>{selectedActor.class}</dd><dt>Dimensions</dt><dd>{selectedActor.dims.l} × {selectedActor.dims.w} × {selectedActor.dims.h} m</dd><dt>Source</dt><dd>{/mirror|ghost/.test(selectedActor.id) ? 'Mirrored V2X detection' : 'SimForge truth'}</dd></dl></aside>}</main>}
+    {page === 'drive' && <DrivePage frames={twin.frames} fixtureMode={fixtureMode} drive={drive}/>}
+    {page === 'map' && <main className="map-page"><TwinScene frames={twin.frames}/><ZoneEditor send={drive.sendOp}/><OperationsPanel send={drive.sendOp}/><aside className="objects-panel"><h2>Truth objects</h2>{actorList.map((actor) => <button key={actor.id} onClick={() => setSelectedActor(actor)}><span>{actor.class}</span>{actor.id}</button>)}</aside>{selectedActor && <aside className="detail-panel"><button onClick={() => setSelectedActor(null)}>×</button><small>OBJECT DETAIL</small><h2>{selectedActor.id}</h2><dl><dt>Class</dt><dd>{selectedActor.class}</dd><dt>Dimensions</dt><dd>{selectedActor.dims.l} × {selectedActor.dims.w} × {selectedActor.dims.h} m</dd><dt>Source</dt><dd>{/mirror|ghost/.test(selectedActor.id) ? 'Mirrored V2X detection' : 'SimForge truth'}</dd></dl></aside>}</main>}
     <aside className="alerts"><h2>EVA alerts <span>{twin.alerts.length}</span></h2>{twin.alerts.map((alert) => <article key={alert.id}><strong>{alert.title}</strong><p>{alert.message}</p></article>)}</aside>
   </div>;
 }
