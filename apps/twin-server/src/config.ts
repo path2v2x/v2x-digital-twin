@@ -65,6 +65,11 @@ export interface TwinConfig {
   readonly userTrajectoriesDir: string;
   readonly trafficDir: string;
   readonly mjpegFps: number;
+  /** Live KVS camera sourcing; disable with TWIN_LIVE_FEEDS=0. */
+  readonly liveFeeds: boolean;
+  readonly kvsStreamPrefix: string;
+  readonly kvsRegion: string;
+  readonly awsProfile: string;
 }
 
 export function loadConfig(): TwinConfig {
@@ -101,5 +106,9 @@ export function loadConfig(): TwinConfig {
     userTrajectoriesDir: str('TWIN_USER_TRAJECTORIES_DIR', path.join(APP_ROOT, 'var', 'trajectories')),
     trafficDir: str('TWIN_TRAFFIC_DIR', path.join(APP_ROOT, 'assets', 'traffic')),
     mjpegFps: num('TWIN_MJPEG_FPS', 10),
+    liveFeeds: flag('TWIN_LIVE_FEEDS', true),
+    kvsStreamPrefix: str('TWIN_KVS_STREAM_PREFIX', 'v2x-backend-cam-'),
+    kvsRegion: str('TWIN_KVS_REGION', 'us-west-2'),
+    awsProfile: str('TWIN_AWS_PROFILE', 'path'),
   };
 }

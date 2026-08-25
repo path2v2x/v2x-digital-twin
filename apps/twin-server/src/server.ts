@@ -42,7 +42,7 @@ export function startServers(deps: DriveDeps): TwinServers {
 
     if (route === '/twin') {
       const twin = new TwinConnection(world, sync, config, url.searchParams);
-      for (const message of twin.helloMessages(host)) ws.send(JSON.stringify(message));
+      for (const message of twin.helloMessages(host, mjpeg.modes())) ws.send(JSON.stringify(message));
       const clockTimer = setInterval(() => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(twin.clockPayload()));
       }, 1000);
@@ -89,7 +89,7 @@ export function startServers(deps: DriveDeps): TwinServers {
   });
 
   /* ---------------------------------------------------------- HTTP :8090 */
-  const mjpeg = new MjpegService(config.footageMp4, config.mjpegFps);
+  const mjpeg = new MjpegService(config.footageMp4, config.mjpegFps, config.liveFeeds ? { streamPrefix: config.kvsStreamPrefix, region: config.kvsRegion, profile: config.awsProfile } : null);
   mjpeg.start();
   const httpServer = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -104,7 +104,7 @@ export function startServers(deps: DriveDeps): TwinServers {
     }
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ status: 'ok', engine: 'simforge', mode: sync.currentMode() }));
+      res.end(JSON.stringify({ status: 'ok', engine: 'simforge', mode: sync.currentMode(), feeds: mjpeg.modes() }));
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json' });

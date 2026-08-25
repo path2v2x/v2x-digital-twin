@@ -27,10 +27,10 @@ export interface TwinCamerasMessage {
   readonly mapId: string;
   readonly xodrSha256: string;
   readonly site: { lat: number; lon: number; name: string };
-  readonly cameras: Array<CameraEntry & { stream_url: string }>;
+  readonly cameras: Array<CameraEntry & { stream_url: string; feed_mode: string }>;
 }
 
-export function buildTwinCameras(config: TwinConfig, xodrSha256: string, host = 'localhost'): TwinCamerasMessage {
+export function buildTwinCameras(config: TwinConfig, xodrSha256: string, host = 'localhost', feedModes: Record<string, string> = {}): TwinCamerasMessage {
   const parsed = JSON.parse(readFileSync(config.camerasJson, 'utf8')) as CamerasFile;
   return {
     type: 'twin_cameras',
@@ -40,6 +40,7 @@ export function buildTwinCameras(config: TwinConfig, xodrSha256: string, host = 
     cameras: parsed.cameras.map((camera) => ({
       ...camera,
       stream_url: `http://${host}:${config.httpPort}/streams/${camera.id}.mjpg`,
+      feed_mode: feedModes[camera.id] ?? 'replay',
     })),
   };
 }

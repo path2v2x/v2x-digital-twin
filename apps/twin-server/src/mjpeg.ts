@@ -1,12 +1,17 @@
 /**
- * MJPEG camera feeds: GET /streams/ch{1..4}.mjpg — multipart JPEG streaming
- * the recorded site footage on loop (perception-app URL shape). One ffmpeg
- * per channel decodes the mp4 with -stream_loop -1 into an MJPEG pipe; a
- * per-channel crop/offset makes the four cells visibly distinct. The HTTP
- * layer holds only the latest JPEG per channel and writes it to every
- * connected client at the configured fps.
+ * MJPEG camera feeds: GET /streams/ch{1..4}.mjpg — multipart JPEG streaming.
+ *
+ * Source per channel, in preference order:
+ *  1. LIVE — the real Richmond site camera via Kinesis Video Streams HLS
+ *     (stream `<prefix><channel>`, resolved with the aws CLI; the session URL
+ *     expires so ffmpeg exit simply triggers a fresh resolve+relaunch).
+ *  2. REPLAY fallback — the recorded site footage looped with a per-channel
+ *     crop, used when live resolution fails; a timer periodically retries live.
+ *
+ * One ffmpeg per channel decodes into an MJPEG pipe; the HTTP layer holds only
+ * the latest JPEG per channel and writes it to every client at the configured fps.
  */
-import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import { spawn, execFile, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 
@@ -24,12 +29,25 @@ const CHANNEL_FILTER: Record<Channel, string> = {
 const SOI = Buffer.from([0xff, 0xd8]);
 const EOI = Buffer.from([0xff, 0xd9]);
 
+export type FeedMode = 'live' | 'replay' | 'starting';
+
+export interface LiveFeedConfig {
+  readonly streamPrefix: string;
+  readonly region: string;
+  readonly profile: string;
+}
+
 interface ChannelState {
   process: ChildProcessByStdio<null, Readable, null> | null;
   buffer: Buffer;
   latest: Buffer | null;
   clients: Set<ServerResponse>;
+  mode: FeedMode;
+  liveRetryTimer: NodeJS.Timeout | null;
 }
+
+const LIVE_RETRY_MS = 5 * 60 * 1000;
+const HLS_EXPIRES_S = 43_200;
 
 export class MjpegService {
   private readonly footage: string;
@@ -38,34 +56,76 @@ export class MjpegService {
   private pushTimer: NodeJS.Timeout | null = null;
   private stopped = false;
 
-  constructor(footage: string, fps: number) {
+  private readonly live: LiveFeedConfig | null;
+  private readonly endpointCache = new Map<Channel, string>();
+
+  constructor(footage: string, fps: number, live: LiveFeedConfig | null = null) {
     this.footage = footage;
     this.fps = fps;
+    this.live = live;
+  }
+
+  /** Current per-channel feed mode (for twin_cameras + /health truthfulness). */
+  modes(): Record<string, FeedMode> {
+    const out: Record<string, FeedMode> = {};
+    for (const [channel, state] of this.channels) out[channel] = state.mode;
+    return out;
   }
 
   start(): void {
     for (const channel of CHANNELS) {
-      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, clients: new Set() };
+      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, clients: new Set(), mode: 'starting', liveRetryTimer: null };
       this.channels.set(channel, state);
-      this.launch(channel, state);
+      void this.launch(channel, state);
     }
     this.pushTimer = setInterval(() => this.pushFrames(), 1000 / this.fps);
   }
 
-  private launch(channel: Channel, state: ChannelState): void {
+  private awsCli(args: string[]): Promise<string> {
+    const { promise, resolve, reject } = Promise.withResolvers<string>();
+    execFile('aws', args, { env: { ...process.env, AWS_PROFILE: this.live!.profile }, timeout: 15_000 }, (error, stdout) => {
+      if (error) reject(error); else resolve(stdout.trim());
+    });
+    return promise;
+  }
+
+  /** Resolve a fresh KVS HLS session URL for the channel's live camera stream. */
+  private async resolveHlsUrl(channel: Channel): Promise<string> {
+    const { streamPrefix, region } = this.live!;
+    const streamName = `${streamPrefix}${channel}`;
+    let endpoint = this.endpointCache.get(channel);
+    if (!endpoint) {
+      endpoint = await this.awsCli(['kinesisvideo', 'get-data-endpoint', '--stream-name', streamName, '--api-name', 'GET_HLS_STREAMING_SESSION_URL', '--region', region, '--query', 'DataEndpoint', '--output', 'text']);
+      this.endpointCache.set(channel, endpoint);
+    }
+    return this.awsCli(['kinesis-video-archived-media', 'get-hls-streaming-session-url', '--endpoint-url', endpoint, '--stream-name', streamName, '--playback-mode', 'LIVE', '--expires', String(HLS_EXPIRES_S), '--region', region, '--query', 'HLSStreamingSessionURL', '--output', 'text']);
+  }
+
+  private async launch(channel: Channel, state: ChannelState): Promise<void> {
     if (this.stopped) return;
-    const child = spawn(
-      'ffmpeg',
-      [
-        '-hide_banner', '-loglevel', 'error',
-        '-re', '-stream_loop', '-1', '-i', this.footage,
-        '-vf', CHANNEL_FILTER[channel],
-        '-r', String(this.fps),
-        '-q:v', '7',
-        '-f', 'mjpeg', 'pipe:1',
-      ],
-      { stdio: ['ignore', 'pipe', 'ignore'] },
-    );
+    if (state.liveRetryTimer) {
+      clearTimeout(state.liveRetryTimer);
+      state.liveRetryTimer = null;
+    }
+    let args: string[];
+    if (this.live) {
+      try {
+        const hlsUrl = await this.resolveHlsUrl(channel);
+        args = ['-hide_banner', '-loglevel', 'error', '-i', hlsUrl, '-vf', 'scale=640:480', '-r', String(this.fps), '-q:v', '7', '-f', 'mjpeg', 'pipe:1'];
+        state.mode = 'live';
+      } catch (error) {
+        console.warn(`[mjpeg] ${channel}: live feed unavailable (${String(error).slice(0, 120)}); falling back to recorded loop`);
+        this.endpointCache.delete(channel);
+        args = this.replayArgs(channel);
+        state.mode = 'replay';
+        state.liveRetryTimer = setTimeout(() => state.process?.kill('SIGTERM'), LIVE_RETRY_MS);
+      }
+    } else {
+      args = this.replayArgs(channel);
+      state.mode = 'replay';
+    }
+    if (this.stopped) return;
+    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'ignore'] });
     state.process = child;
     child.stdout.on('data', (chunk: Buffer) => {
       state.buffer = state.buffer.length === 0 ? chunk : Buffer.concat([state.buffer, chunk]);
@@ -89,8 +149,12 @@ export class MjpegService {
     });
     child.on('exit', () => {
       state.process = null;
-      if (!this.stopped) setTimeout(() => this.launch(channel, state), 2000);
+      if (!this.stopped) setTimeout(() => void this.launch(channel, state), 2000);
     });
+  }
+
+  private replayArgs(channel: Channel): string[] {
+    return ['-hide_banner', '-loglevel', 'error', '-re', '-stream_loop', '-1', '-i', this.footage, '-vf', CHANNEL_FILTER[channel], '-r', String(this.fps), '-q:v', '7', '-f', 'mjpeg', 'pipe:1'];
   }
 
   private pushFrames(): void {
@@ -131,6 +195,7 @@ export class MjpegService {
       this.pushTimer = null;
     }
     for (const state of this.channels.values()) {
+      clearTimeout(state.liveRetryTimer ?? undefined);
       state.process?.kill('SIGTERM');
       for (const res of state.clients) res.end();
       state.clients.clear();

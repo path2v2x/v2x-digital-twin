@@ -30,8 +30,8 @@ export class TwinConnection {
   }
 
   /** Messages the server sends immediately on connect, in order. */
-  helloMessages(host: string): Json[] {
-    const cameras = buildTwinCameras(this.config, this.world.xodrSha256, host);
+  helloMessages(host: string, feedModes: Record<string, string> = {}): Json[] {
+    const cameras = buildTwinCameras(this.config, this.world.xodrSha256, host, feedModes);
     const cameraIds = cameras.cameras.map((c) => c.id);
     const camera = this.cameraId !== null ? cameras.cameras.find((c) => c.id === this.cameraId) ?? null : null;
     const hello: Json = {

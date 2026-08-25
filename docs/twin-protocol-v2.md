@@ -12,7 +12,7 @@ CARLA `digital_twin_bridge` (apps/bridge/ — reference only, deleted in Wave 3)
 |---|---|---|
 | WebSocket | `ws://<host>:8765/drive` | driving sessions, world control (JSON text) + binary `truth_frame` |
 | WebSocket | `ws://<host>:8765/twin` | twin viewers: replay/live clock control (JSON text) + binary `truth_frame` |
-| HTTP | `http://<host>:8090/streams/ch{1..4}.mjpg` | real site-camera footage, multipart MJPEG, loops forever |
+| HTTP | `http://<host>:8090/streams/ch{1..4}.mjpg` | live site cameras via KVS HLS (multipart MJPEG); recorded-loop fallback |
 | HTTP | `http://<host>:8090/health` | `{status:"ok"}` liveness |
 
 Ports: `TWIN_WS_PORT` (default **8765**), `TWIN_HTTP_PORT` (default **8090**).
@@ -330,12 +330,28 @@ renders no pixels; `snapshot_url` is published as `null`.
 ## Camera feeds (perception URL shape)
 
 `GET :8090/streams/{ch1..ch4}.mjpg` → `multipart/x-mixed-replace;
-boundary=frame`, JPEG parts, looping the recorded site footage
-(`assets/richmond-field-station/map/richmond-field-station_20260410-185647.mp4`,
-40 s) via ffmpeg. Each channel applies a distinct crop/offset of the source so
-the four cells differ. This is the URL shape `apps/perception` served
+boundary=frame`, JPEG parts. This is the URL shape `apps/perception` served
 (`process_video.py /streams/{camera}.mjpg`), so FeedCell-style consumers work
 unchanged; URLs are advertised in `twin_cameras.cameras[].stream_url`.
+
+Source per channel, in preference order:
+
+1. **LIVE** — the real Richmond site camera, via Kinesis Video Streams HLS.
+   Stream name `${TWIN_KVS_STREAM_PREFIX}${channel}` (default
+   `v2x-backend-cam-ch1..ch4`) in `TWIN_KVS_REGION` (default `us-west-2`,
+   matching `apps/perception/kinesis_utils.py`), resolved with the aws CLI under
+   `TWIN_AWS_PROFILE` (default `path`): `get-data-endpoint` →
+   `get-hls-streaming-session-url --playback-mode LIVE`. Sessions expire, so an
+   ffmpeg exit simply triggers a fresh resolve + relaunch.
+2. **REPLAY fallback** — the recorded footage
+   (`assets/richmond-field-station/map/richmond-field-station_20260410-185647.mp4`,
+   40 s) looped with a distinct per-channel crop, used when live resolution
+   fails (no credentials, stream inactive). A 5-minute timer retries live.
+
+Set `TWIN_LIVE_FEEDS=0` to force replay. The active mode per channel is
+reported truthfully in `twin_cameras.cameras[].feed_mode` (`live` | `replay` |
+`starting`) and at `GET :8090/health` (`feeds`); the web client's feed badge
+renders `REAL · LIVE` only when the channel is genuinely live.
 
 ## Removed v1 surfaces
 

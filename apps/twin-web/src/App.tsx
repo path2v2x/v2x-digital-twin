@@ -52,13 +52,13 @@ function useTwinSocket(fixtureMode: boolean) {
         if (message.type === 'eva_alert') setAlerts((current) => [...current, { id: crypto.randomUUID(), title: message.title ?? 'EVA alert', message: message.message ?? 'Emergency vehicle activity' }]);
         if (message.type === 'telemetry') setTelemetry({ speed: Number(message.speed ?? 0), gear: Number(message.gear ?? 0) });
         if (message.type === 'twin_cameras' && Array.isArray(message.cameras)) {
-          setCameras(message.cameras.map((camera: Partial<TwinCamera> & { id: TwinCamera['id']; feed_url?: string; stream_url?: string }) => {
+          setCameras(message.cameras.map((camera: Partial<TwinCamera> & { id: TwinCamera['id']; feed_url?: string; stream_url?: string; feed_mode?: TwinCamera['feedMode'] }) => {
             const fallback = CAMERAS.find((candidate) => candidate.id === camera.id) ?? CAMERAS[0]!;
             const raw = camera.streamUrl ?? camera.feed_url ?? camera.stream_url ?? fallback.streamUrl;
             // Same-origin: strip any absolute feed URL down to its path so the
             // request goes through this page's origin (vite proxies /streams).
             const streamUrl = /^https?:/.test(raw) ? new URL(raw).pathname : raw;
-            return { ...fallback, ...camera, streamUrl };
+            return { ...fallback, ...camera, streamUrl, feedMode: camera.feed_mode ?? fallback.feedMode };
           }));
         }
       } else {
@@ -78,7 +78,7 @@ function CameraPage({ frames, cameras }: { frames: readonly TruthFrame[]; camera
     {cameras.map((camera) => <article className="camera-card" key={camera.id} data-testid={`camera-${camera.id}`}>
       <header><strong>{camera.id.toUpperCase()}</strong><span>CALIBRATED · 2560 × 1920</span></header>
       <div className="comparison">
-        <figure><div className="feed-wrap"><img src={camera.streamUrl} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/fixture-camera.jpg'; }} alt={`${camera.id} real MJPEG stream`} /><span className="live-badge">● REAL · LIVE</span></div><figcaption>Site camera</figcaption></figure>
+        <figure><div className="feed-wrap"><img src={camera.streamUrl} onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/fixture-camera.jpg'; }} alt={`${camera.id} real MJPEG stream`} /><span className="live-badge">{camera.feedMode === 'live' ? '● REAL · LIVE' : '● RECORDED · LOOP'}</span></div><figcaption>Site camera</figcaption></figure>
         <figure><div className="feed-wrap twin-feed"><TwinScene frames={frames} camera={camera} /><span className="twin-badge">SIMFORGE · TRUTH</span></div><figcaption>Projection-matched digital twin</figcaption></figure>
       </div>
     </article>)}

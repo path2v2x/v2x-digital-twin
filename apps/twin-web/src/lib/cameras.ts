@@ -11,6 +11,7 @@ export interface TwinCamera {
   intrinsics: { fx: number; fy: number; cx: number; cy: number; width: number; height: number };
   twin_pose: { yaw_offset_deg: number; pitch_offset_deg: number; height_offset_m: number; forward_offset_m: number };
   streamUrl: string;
+  feedMode?: 'live' | 'replay' | 'starting';
 }
 
 export const CAMERA_SITE = { lat: 37.91560117034595, lon: -122.33478756387032 };
