@@ -55,6 +55,8 @@ export function CameraCompareView({ frames, cameras }: CameraCompareViewProps) {
         return <article
           key={camera.id}
           data-testid={`camera-${camera.id}`}
+          data-framing={view?.state ?? 'loading'}
+          data-feed={feed.failed ? 'failed' : camera.feedMode ?? 'unknown'}
           className={`cell${focused && focused !== camera.id ? ' is-hidden' : ''}`}
         >
           <header className="cell__head">
