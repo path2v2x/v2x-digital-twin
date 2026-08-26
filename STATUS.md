@@ -1,7 +1,7 @@
 # V2X SimForge cutover status
 
 **State:** SimForge-native twin is the only simulation runtime. The CARLA world,
-Python bridge, external scenario-runner assets, and legacy SvelteKit/Amplify dashboard
+Python bridge, ScenarioRunner assets, and legacy SvelteKit/Amplify dashboard
 have been removed.
 
 ## Active architecture
@@ -51,8 +51,8 @@ viewer; it is not a build failure.
 
 ## Removed surfaces
 
-- `apps/bridge` and all bridge requirements, tests, tools, legacy scenario
-  files, external-runner patches, and its Dockerfile
+- `apps/bridge` and all bridge requirements, tests, tools, `.xosc` scenarios,
+  ScenarioRunner patches, and its Dockerfile
 - `apps/web` and the retired Amplify deployment/recovery surface
 - obsolete simulator/bridge launch, wait, restart, and systemd units
 - obsolete frontend-link repair and legacy dashboard service units

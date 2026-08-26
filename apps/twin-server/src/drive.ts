@@ -204,6 +204,14 @@ export class DriveSession {
         this.deps.scenarios.deletePlacement(file);
         return { type: 'scenario_deleted', file };
       }
+      case 'list_xosc_scenarios':
+        return { type: 'xosc_list', scenarios: [], status: { running: false, scenario_runner_configured: false } };
+      case 'start_xosc_scenario':
+      case 'stop_xosc_scenario':
+        return {
+          type: 'error',
+          message: 'OpenSCENARIO execution was retired with CARLA; use list_scenarios/load_scenario (engine templates)',
+        };
       case 'list_trajectories':
         return { type: 'trajectory_list', trajectories: this.deps.trajectories.listFiles(), status: this.deps.trajectories.status() };
       case 'upload_trajectory': {
