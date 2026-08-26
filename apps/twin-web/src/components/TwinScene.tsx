@@ -95,6 +95,9 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
 
   useEffect(() => {
     let animation = 0;
+    let coverageTick = 0;
+    let coverageState: SceneFraming['state'] | null = null;
+    let lastFollowMs = performance.now();
     const render = () => {
       const viewer = viewerRef.current;
       const actorRenderer = rendererRef.current;
@@ -113,17 +116,45 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
         updateSignalHeads(viewer, next);
         const followed = actors.find((actor) => actor.id === followRef.current);
         if (followed) {
-          const heading = followed.yawRad;
+          // Scene forward for a truth yaw is (cos, -sin): the renderer rotates
+          // the actor's local +X about +Y, and measured ego velocity matches it.
+          // Chasing along (sin, cos) framed the vehicle broadside.
+          const forwardX = Math.cos(followed.yawRad);
+          const forwardZ = -Math.sin(followed.yawRad);
+          // Cockpit view sits at the windscreen line, derived from the actor's
+          // own dimensions: vehicle interiors are not modelled, so an eye point
+          // inside the shell would render the roof and hood, not the road.
           const firstPerson = modeRef.current === 'first-person';
-          const distance = firstPerson ? -1.2 : 9;
-          const height = firstPerson ? 1.45 : 4.5;
-          const eyeX = followed.position[0] - Math.sin(heading) * distance;
-          const eyeZ = followed.position[2] - Math.cos(heading) * distance;
+          const offset = firstPerson ? followed.dims.l * .42 : -9;
+          const height = firstPerson ? followed.dims.h * .9 : 4.5;
           viewer.setCameraPoseConstraintsEnabled(false);
           viewer.controls.setEnabled(false);
-          viewer.camera.position.lerp({ x: eyeX, y: followed.position[1] + height, z: eyeZ }, .18);
-          viewer.controls.target.set(followed.position[0] + Math.sin(heading) * 8, followed.position[1] + 1, followed.position[2] + Math.cos(heading) * 8);
+          // Frame-rate independent smoothing. A fixed per-frame lerp lags by
+          // speed x frametime / alpha, which on a software renderer left the
+          // camera tens of metres behind the ego; this converges the same way
+          // at any frame rate.
+          const now = performance.now();
+          const delta = Math.min(.25, (now - lastFollowMs) / 1000);
+          lastFollowMs = now;
+          const alpha = 1 - Math.exp(-(firstPerson ? 14 : 7) * delta);
+          viewer.camera.position.lerp({
+            x: followed.position[0] + forwardX * offset,
+            y: followed.position[1] + height,
+            z: followed.position[2] + forwardZ * offset,
+          }, alpha);
+          viewer.controls.target.set(followed.position[0] + forwardX * 8, followed.position[1] + 1, followed.position[2] + forwardZ * 8);
           viewer.camera.lookAt(viewer.controls.target);
+
+          // The road network reaches past the streamed 3D tiles, so an ego can
+          // drive off the mapped ground. Say so instead of rendering a void.
+          if (framingRef.current && ++coverageTick % 30 === 0) {
+            const onMap = viewer.sampleGroundHeight(followed.position[0], followed.position[2]) !== null;
+            const state = onMap ? 'framed' : 'no-coverage';
+            if (state !== coverageState) {
+              coverageState = state;
+              framingRef.current({ state, distanceM: null });
+            }
+          }
         }
       }
       animation = requestAnimationFrame(render);

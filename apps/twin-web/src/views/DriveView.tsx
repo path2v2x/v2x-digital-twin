@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { TwinScene } from '../components/TwinScene';
+import { TwinScene, type SceneFraming } from '../components/TwinScene';
 import type { DriveSocket } from '../state/twin';
 import type { TruthFrame } from '../lib/truth';
 
@@ -18,6 +18,7 @@ interface DriveViewProps {
 export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
   const [fixtureActive, setFixtureActive] = useState(false);
   const [cameraMode, setCameraMode] = useState<'chase' | 'first-person'>('chase');
+  const [framing, setFraming] = useState<SceneFraming['state']>('loading');
   const keys = useRef(new Set<string>());
   const active = fixtureMode ? fixtureActive : drive.active;
   const telemetry = fixtureMode ? { speed: 43, gear: 2 } : drive.telemetry;
@@ -58,7 +59,13 @@ export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
   const fixtureEgoId = latest?.actors.find((actor) => actor.id.includes('ego'))?.id ?? latest?.actors[0]?.id ?? null;
 
   return <div className="canvas-fill">
-    <TwinScene className="canvas__stage" frames={frames} followActorId={drive.egoActorId ?? fixtureEgoId} cameraMode={cameraMode} />
+    <TwinScene
+      className="canvas__stage"
+      frames={frames}
+      followActorId={drive.egoActorId ?? fixtureEgoId}
+      cameraMode={cameraMode}
+      onFraming={(report) => setFraming(report.state)}
+    />
 
     <div className="hud-layer">
       <div className="hud-slot hud-slot--tl">
@@ -68,10 +75,12 @@ export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
             Driving mode
             <span className="num">{active ? 'Active' : fixtureMode ? 'Fixture' : 'Ready'}</span>
           </span>
+          {/* With no session there is no vehicle, and the last telemetry tick is
+            * stale: report no reading rather than a number that means nothing. */}
           <span className="hud__row">
-            <span className="hud-readout"><strong>{Math.round(telemetry.speed)}</strong><span className="hud-readout__unit">km/h</span></span>
+            <span className="hud-readout"><strong>{active ? Math.round(telemetry.speed) : '--'}</strong><span className="hud-readout__unit">km/h</span></span>
             <span className="hud-readout__unit">Gear</span>
-            <span className="num">{telemetry.gear}</span>
+            <span className="num">{active ? telemetry.gear : '--'}</span>
           </span>
           <span className="hud__row">
             <button
@@ -85,6 +94,10 @@ export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
             <span className="hud__label">{drive.egoActorId ? `Ego ${drive.egoActorId}` : 'No ego bound'}</span>
           </span>
         </div>
+        {framing === 'no-coverage' && <p className="notice notice--degraded">
+          Ego outside mapped tile coverage
+          <span className="field__hint">The road network extends past the streamed 3D tiles, so the twin has no geometry to draw here</span>
+        </p>}
       </div>
 
       <div className="hud-slot hud-slot--tr">
