@@ -18,7 +18,8 @@
  *   .library .library__head .library__title .library__sub .library__body .library__foot
  *   .inspector .inspector__head .inspector__body
  *   .canvas .canvas__stage
- *   .dock .dock__bar .dock__label .dock__transport .dock__track .dock__playhead
+ *   .dock .dock--compact .dock__bar .dock__label .dock__transport .dock__clock
+ *   .dock__track .dock__ruler .dock__scrub
  *   .toasts
  * primitives (both lanes)
  *   .btn  .btn--primary .btn--ghost .btn--outline .btn--danger  .btn--sm .btn--lg
@@ -47,7 +48,7 @@
  *   .feed-badge .feed-badge--live .feed-badge--recorded .feed-badge--twin
  *   .notice .notice--degraded
  * canvas overlays (EditorShell lane)
- *   .mode-banner .zone-overlay
+ *   .mode-banner .zone-overlay .click-capture
  * =================================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@400;500;600&family=Chakra+Petch:wght@600;700&display=swap');
@@ -584,8 +585,12 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .dock__track { position: relative; flex: 1 1 auto; height: var(--dock-bar-h); display: flex; align-items: center; }
 .dock__ruler { position: absolute; inset: 0; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 0 6px; pointer-events: none; }
 .dock__ruler span { font-family: var(--font-meta); font-size: 9px; letter-spacing: var(--track-meta); color: var(--fg-5); }
-.dock__playhead { position: absolute; top: 8px; bottom: 8px; width: 2px; background: var(--amber); box-shadow: 0 0 8px rgba(232, 224, 68, .5); pointer-events: none; }
+/* The scrub thumb IS the playhead: 2px amber with the telemetry glow, the one
+ * place a glow is sanctioned. */
 .dock__scrub { position: relative; width: 100%; }
+.dock__scrub::-webkit-slider-thumb { width: 2px; box-shadow: 0 0 8px rgba(232, 224, 68, .5); }
+.dock__scrub::-moz-range-thumb { width: 2px; box-shadow: 0 0 8px rgba(232, 224, 68, .5); }
+.dock--compact { width: auto; }
 
 /* ===================================================================
  * CANVAS-LOCAL — used by the view lane inside the canvas region only.
@@ -691,7 +696,8 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .zone-overlay { position: absolute; inset: 0; z-index: var(--z-overlay); cursor: crosshair; }
 .zone-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .zone-overlay polygon { fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1; }
-.zone-overlay rect { fill: var(--amber); }
+.zone-overlay i { position: absolute; width: 6px; height: 6px; margin: -3px 0 0 -3px; background: var(--amber); }
+.click-capture { position: absolute; inset: 0; z-index: var(--z-overlay); cursor: crosshair; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
