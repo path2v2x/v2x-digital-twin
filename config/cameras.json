@@ -8,6 +8,14 @@
     "state": "CA",
     "country": "USA"
   },
+  "rig": {
+    "map": "richmond-field-station",
+    "feature_id": "372",
+    "feature_category": "traffic_light",
+    "label": "RFS Mast 1",
+    "comment": "All four channels share one mast. feature_id is the traffic_light SignalFeature whose pole base anchors the rig in scene space; measured 0.7 m from the surveyed mast position. The feature z_offset (4.48 m) is the signal head, NOT the camera height -- each camera carries its own height_m (7.0).",
+    "surveyed": { "lat": 37.91560117034595, "lon": -122.33478756387032, "offset_m": 0.7 }
+  },
   "cameras": [
     {
       "id": "ch1",
