@@ -28,7 +28,7 @@
  *   .field .field__label .field__value .field__hint
  *   .input .select .range .range-row .range-row__label .range-row__out
  *   .check-row .check .check-state
- *   .badge .badge--ok .badge--warn .badge--danger .badge--live .badge--amber
+ *   .badge .badge--ok .badge--warn .badge--danger .badge--live
  *   .status-dot .status-dot--live .status-dot--stale
  *   .panel .section-head .section-head__count
  *   .row .row__label .row__meta        .row.is-selected
@@ -168,7 +168,7 @@ body { overflow: hidden; }
 button, input, select, textarea { font: inherit; color: inherit; border-radius: var(--radius); }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
-h1, h2, h3, p, dl, dd { margin: 0; }
+h1, h2, h3, p, dl, dd, figure, figcaption { margin: 0; }
 
 /* Styled scrollbars: the product's dimensions and opacities, radius reset to
  * 0 and gradients replaced with solid fills per Flat Chrome. */
@@ -327,7 +327,7 @@ h1, h2, h3, p, dl, dd { margin: 0; }
   background: transparent;
   white-space: nowrap;
 }
-.badge--amber, .badge--live { color: var(--amber); border-color: var(--amber-line); }
+.badge--live { color: var(--amber); border-color: var(--amber-line); }
 .badge--ok { color: var(--ok); border-color: rgba(87, 199, 133, .42); }
 .badge--warn { color: var(--warn); border-color: rgba(240, 161, 60, .42); }
 .badge--danger { color: var(--danger); border-color: rgba(255, 107, 94, .42); }
