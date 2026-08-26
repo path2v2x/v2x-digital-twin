@@ -419,7 +419,7 @@ h1, h2, h3, p, dl, dd, figure, figcaption { margin: 0; }
 .toast__title button { margin-left: auto; }
 .toast--warn { border-top-color: rgba(240, 161, 60, .42); }
 .toast--warn .toast__title { color: var(--warn); }
-.toast--danger { border-top-color: rgba(255, 107, 94, .42); }
+.toast__title svg, .badge svg, .notice svg, .hud__label svg, .dock__label svg { flex: 0 0 auto; width: 14px; height: 14px; }
 .toast--danger .toast__title { color: var(--danger); }
 @keyframes toast-in { from { opacity: 0; transform: translateY(6px) } to { opacity: 1; transform: none } }
 

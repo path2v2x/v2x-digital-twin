@@ -48,7 +48,7 @@ export function Inspector({ actor, sceneActor, onClose, weather, onWeather, traf
           {TRAFFIC_PRESETS.map((preset) => <option key={preset} value={preset}>{preset}</option>)}
         </select>
       </div>
-      <div className="field"><span className="field__hint">Applied to the live world immediately</span></div>
+      <div className="field"><span className="field__hint">Applies immediately. Server state is not read back.</span></div>
     </div>
   </aside>;
 }

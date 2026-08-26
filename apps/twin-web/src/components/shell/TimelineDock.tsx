@@ -19,7 +19,10 @@ export function TimelineDock({ mode, clockMode, clock, onLive, onSeek }: Timelin
   // Keyboard capture belongs to the drive canvas, so the dock collapses to the
   // clock and transport there instead of offering a full ruler.
   const compact = mode === 'drive';
-  const stamp = new Date(clock * 1000).toISOString().slice(11, 19);
+  // The server only publishes replay_clock while replaying: in live there is no
+  // wall clock to show, and printing the last replayed stamp would read as a
+  // live time that is not one.
+  const stamp = live ? '--:--:--' : new Date(clock * 1000).toISOString().slice(11, 19);
 
   return <section className={`dock${compact ? ' dock--compact' : ''}`} aria-label="Twin timeline">
     <div className="dock__bar">
@@ -28,7 +31,7 @@ export function TimelineDock({ mode, clockMode, clock, onLive, onSeek }: Timelin
         <button type="button" className="icon-btn icon-btn--sm" aria-pressed={live} aria-label="Return to live" title="Return to live" onClick={onLive}><LiveIcon /></button>
         <button type="button" className="icon-btn icon-btn--sm" aria-pressed={!live} aria-label="Replay from playhead" title="Replay from playhead" onClick={() => onSeek(clock)}><ReplayIcon /></button>
       </div>
-      <span className="dock__clock">{stamp}<small>{live ? 'live · utc' : 'replay · utc'}</small></span>
+      <span className="dock__clock">{stamp}<small>{live ? 'live · no replay clock' : 'replay · utc'}</small></span>
       {!compact && <div className="dock__track">
         <div className="dock__ruler" aria-hidden>{RULER.map((tick) => <span key={tick}>{tick}</span>)}</div>
         <input
@@ -39,7 +42,7 @@ export function TimelineDock({ mode, clockMode, clock, onLive, onSeek }: Timelin
           step={1}
           value={clock}
           aria-label="Replay clock"
-          aria-valuetext={`${stamp} UTC`}
+          aria-valuetext={live ? `seek target ${new Date(clock * 1000).toISOString().slice(11, 19)} UTC` : `${stamp} UTC`}
           onChange={(event) => onSeek(Number(event.target.value))}
         />
       </div>}

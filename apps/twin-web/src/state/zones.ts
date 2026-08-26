@@ -56,22 +56,20 @@ export function useZones(send: (message: object) => void): ZoneTool {
   }, []);
 
   const save = useCallback(() => {
-    setVertices((currentVertices) => {
-      if (currentVertices.length < 3) return currentVertices;
-      publish([...zones, {
-        id: crypto.randomUUID(),
-        name: `Zone ${zones.length + 1}`,
-        message: 'Connected vehicle advisory',
-        zone_kind: 'advisory',
-        signal_type: 'v2x',
-        polygon: currentVertices,
-        color: '#E8E044',
-      }]);
-      setMarks([]);
-      setDrawing(false);
-      return [];
-    });
-  }, [publish, zones]);
+    if (vertices.length < 3) return;
+    publish([...zones, {
+      id: crypto.randomUUID(),
+      name: `Zone ${zones.length + 1}`,
+      message: 'Connected vehicle advisory',
+      zone_kind: 'advisory',
+      signal_type: 'v2x',
+      polygon: vertices as [number, number][],
+      color: '#E8E044',
+    }]);
+    setVertices([]);
+    setMarks([]);
+    setDrawing(false);
+  }, [publish, vertices, zones]);
 
   const remove = useCallback((id: string) => publish(zones.filter((zone) => zone.id !== id)), [publish, zones]);
 

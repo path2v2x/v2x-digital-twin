@@ -1,6 +1,8 @@
 /** Line icons for the editor chrome. 24-unit grid, 1.5 stroke, currentColor;
  * sizing comes from the consuming class (.icon-btn svg / .seg__item svg). */
-const BASE = { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
+/* Intrinsic 16px so an icon dropped into a flex row without a sizing rule
+ * cannot stretch to the container's width; CSS still overrides per component. */
+const BASE = { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const, 'aria-hidden': true };
 
 export const SceneIcon = () => <svg {...BASE}><path d="M12 3 21 7.5v9L12 21 3 16.5v-9L12 3Z" /><path d="M3 7.5 12 12l9-4.5M12 12v9" /></svg>;
 export const DriveIcon = () => <svg {...BASE}><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3" /><path d="M12 3v6M4.2 16.5 9.4 13.5M19.8 16.5 14.6 13.5" /></svg>;
