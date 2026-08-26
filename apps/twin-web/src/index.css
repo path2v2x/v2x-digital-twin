@@ -247,8 +247,10 @@
   --fg-1: rgba(255, 255, 255, .92);
   --fg-2: rgba(255, 255, 255, .70);
   --fg-3: rgba(255, 255, 255, .50);
-  --fg-4: rgba(255, 255, 255, .40);
-  --fg-5: rgba(255, 255, 255, .28);
+  /* .52 / .36, not studio's .40 / .28 — see the scrim note below: over a
+   * daylight aerial these two land at 1.8:1 and 1.5:1 at studio's values. */
+  --fg-4: rgba(255, 255, 255, .52);
+  --fg-5: rgba(255, 255, 255, .36);
 
   /* hairlines */
   --line-soft: rgba(255, 255, 255, .06);
@@ -275,24 +277,42 @@
   --danger: #f87171;
   --danger-line: rgba(248, 113, 113, .38);
 
-  /* --- surface recipes, lifted from the editor's own constants -------
+  /* --- surface recipes ----------------------------------------------
    * Three distinct glasses, not one: the rail samples the world through
    * a heavy 72px blur, the timeline card uses a lighter 48px one, and
    * the top bar desaturates completely so the sky behind it never tints
    * the chrome. Keeping them separate is what makes the twin read as
-   * the same build rather than an approximation. */
-  --glass-rail-bg: linear-gradient(145deg, rgba(19, 24, 32, .34), rgba(8, 11, 16, .22));
-  --glass-panel-bg: linear-gradient(150deg, rgba(19, 24, 32, .46), rgba(8, 11, 16, .34));
+   * the same build rather than an approximation.
+   *
+   * SCRIM DEVIATION — the one place these numbers leave studio. Studio's
+   * editor floats over a dark city; this twin floats over a sunlit aerial
+   * of Richmond Field Station, and at studio's alphas (rail .34/.22,
+   * panel .46/.34, card .20, bar .52) the glass composites to a mid-green
+   * around rgb(114,137,113). Measured against that on a 1600x1000 capture:
+   * rail icons 2.0:1, panel body copy 2.7:1, meta labels 1.8:1 — all far
+   * below WCAG AA. The alphas below are solved against a worst case of a
+   * pure white backdrop, which yields rail icons 5.3:1, panel body 8.0:1
+   * and meta labels 5.1:1. Blur, gradient, hairline and shadow are
+   * untouched, so the surfaces still read as the same build. Do not lower
+   * these back to studio's values without re-measuring over the map. */
+  --glass-rail-bg: linear-gradient(145deg, rgba(19, 24, 32, .86), rgba(8, 11, 16, .78));
+  --glass-panel-bg: linear-gradient(150deg, rgba(19, 24, 32, .94), rgba(8, 11, 16, .87));
   --glass-rail-blur: blur(72px) saturate(1.85) contrast(1.05);
   --glass-rail-shadow: 0 18px 48px rgba(0, 0, 0, .3), inset 0 1px rgba(255, 255, 255, .14);
   --glass-panel-shadow: 26px 24px 70px rgba(0, 0, 0, .42), inset 0 1px rgba(255, 255, 255, .12);
 
-  --glass-card-bg: rgba(0, 0, 0, .2);
+  --glass-card-bg: rgba(6, 8, 11, .9);
   --glass-card-blur: blur(48px) saturate(1.65) contrast(1.05);
   --glass-card-shadow: 0 24px 80px -24px rgba(0, 0, 0, .85);
   --glass-card-ring: inset 0 0 0 1px rgba(255, 255, 255, .06);
+  /* The dock sits lower than a card in the reading hierarchy: it carries
+   * short labels, so it keeps a little more of the world behind it. */
+  --glass-dock-bg: rgba(6, 8, 11, .82);
+  /* Status pills and provenance badges sit directly on live imagery with no
+   * parent scrim under them, so they carry their own. */
+  --pill-bg: rgba(15, 16, 18, .9);
 
-  --topbar-bg: rgba(0, 0, 0, .52);
+  --topbar-bg: rgba(0, 0, 0, .72);
   --topbar-blur: blur(40px) saturate(0);
   --topbar-shadow: 0 10px 35px rgba(0, 0, 0, .24), inset 0 1px 0 rgba(255, 255, 255, .1);
 
@@ -615,7 +635,7 @@ button:disabled { cursor: default; opacity: .28; }
   max-height: var(--dock-max-h);
   overflow: hidden;
   color: #fff;
-  background: rgba(0, 0, 0, .15);
+  background: var(--glass-dock-bg);
   border: 1px solid rgba(255, 255, 255, .25);
   box-shadow: var(--glass-card-shadow);
   backdrop-filter: var(--glass-card-blur);
@@ -1000,7 +1020,7 @@ button:disabled { cursor: default; opacity: .28; }
   gap: 6px;
   height: 28px;
   padding: 0 10px;
-  background: var(--pill-bg, rgba(15, 15, 15, .9));
+  background: var(--pill-bg);
   border: 1px solid var(--line);
   color: var(--fg-2);
   font-size: var(--text-xs);
@@ -1231,7 +1251,7 @@ button:disabled { cursor: default; opacity: .28; }
   gap: 5px;
   padding: 2px 6px;
   border: 1px solid var(--line);
-  background: rgba(0, 0, 0, .55);
+  background: var(--pill-bg);
   font-family: var(--font-meta);
   font-size: var(--text-micro);
   line-height: var(--leading-micro);
@@ -1279,7 +1299,7 @@ button:disabled { cursor: default; opacity: .28; }
 .panel__foot .meta { color: var(--fg-4); }
 
 .tile strong { font-family: var(--font-body); font-size: var(--text-xs); line-height: var(--leading-xs); font-weight: 600; color: inherit; }
-.tile .meta { color: var(--fg-5); }
+.tile .meta { color: var(--fg-4); }
 .tile.is-armed .meta { color: var(--amber); }
 
 /* The scrub sits invisibly over the ruler: the ticks and the playhead are the
