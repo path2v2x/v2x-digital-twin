@@ -39,11 +39,15 @@
  *   .kbd .meta .num .truncate .scroll .divider
  * canvas-local (CanvasModes lane)
  *   .canvas-fill
- *   .hud .hud__label .hud__row .hud-readout .hud-readout__unit
- *   .grid-2x2 .cell .cell__head .cell__id .cell__status .cell__body
- *   .pane .pane__label .pane__frame .pane-divider
+ *   .hud-layer .hud-slot .hud-slot--tl|--tr|--bl
+ *   .hud .hud--stack .hud__label .hud__row .hud-readout .hud-readout__unit
+ *   .grid-2x2 (.is-focused) .cell (.is-hidden) .cell__head .cell__id .cell__status .cell__body
+ *   .pane .pane__frame .pane__fit (inline --pane-ar) .pane__label .pane__note
+ *   .pane-divider .pane-divider__tag
  *   .feed-badge .feed-badge--live .feed-badge--recorded .feed-badge--twin
  *   .notice .notice--degraded
+ * canvas overlays (EditorShell lane)
+ *   .mode-banner .zone-overlay
  * =================================================================== */
 
 @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow:wght@400;500;600&family=Chakra+Petch:wght@600;700&display=swap');
@@ -612,10 +616,16 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 .cell__body { display: grid; grid-template-columns: 1fr 1px 1fr; flex: 1 1 auto; min-height: 0; }
 
 .pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface-deep); }
-.pane__frame { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
-.pane__frame > img, .pane__frame > canvas, .pane__frame > div { display: block; width: 100%; height: 100%; object-fit: cover; }
+.pane__frame { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; place-items: center; container-type: size; }
+.pane__frame > img, .pane__frame > canvas, .pane__frame > div:not(.pane__fit) { display: block; width: 100%; height: 100%; object-fit: cover; }
+/* Projection-matched pair: real feed and twin render share one aspect, taken
+ * from the channel's intrinsics via an inline --pane-ar. */
+.pane__fit { position: relative; width: min(100cqw, 100cqh * var(--pane-ar, 1.3333)); height: min(100cqh, 100cqw / var(--pane-ar, 1.3333)); overflow: hidden; background: var(--surface-base); }
+.pane__fit > img, .pane__fit > canvas, .pane__fit > div { display: block; width: 100%; height: 100%; }
+.pane__note { position: absolute; left: var(--s-2); right: var(--s-2); bottom: var(--s-2); z-index: 1; }
 .pane__label { padding: 4px var(--s-2); font-family: var(--font-meta); font-size: 9px; letter-spacing: var(--track-meta-wider); text-transform: uppercase; color: var(--fg-4); border-top: 1px solid var(--line-soft); }
-.pane-divider { background: var(--line); }
+.pane-divider { position: relative; background: var(--line); }
+.pane-divider__tag { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); writing-mode: vertical-rl; padding: var(--s-2) 2px; background: var(--surface-base); font-family: var(--font-meta); font-size: 9px; letter-spacing: var(--track-meta-wider); text-transform: uppercase; color: var(--fg-5); }
 
 .feed-badge {
   position: absolute;
@@ -640,6 +650,48 @@ h1, h2, h3, p, dl, dd { margin: 0; }
 
 .notice { display: flex; flex-direction: column; gap: var(--s-1); padding: var(--s-2) var(--s-3); background: var(--surface-panel); border: 1px solid var(--line); font-family: var(--font-meta); font-size: var(--fs-micro); letter-spacing: var(--track-meta); text-transform: uppercase; color: var(--fg-3); }
 .notice--degraded { border-color: rgba(240, 161, 60, .42); color: var(--warn); }
+
+/* Canvas overlay slots. The dock is centred at the bottom, so HUD content
+ * takes the corners and never overlaps it. */
+.hud-layer { position: absolute; inset: 0; pointer-events: none; z-index: var(--z-overlay); }
+.hud-slot { position: absolute; display: flex; flex-direction: column; gap: var(--s-2); pointer-events: auto; }
+.hud-slot--tl { top: var(--s-4); left: var(--s-4); align-items: flex-start; }
+.hud-slot--tr { top: var(--s-4); right: var(--s-4); align-items: flex-end; }
+.hud-slot--bl { bottom: var(--s-4); left: var(--s-4); align-items: flex-start; }
+.hud--stack { flex-direction: column; align-items: flex-start; gap: var(--s-3); }
+
+/* Single-channel focus, and a stacked fallback below the four-up measure. */
+.grid-2x2.is-focused { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+.grid-2x2 > .cell.is-hidden { display: none; }
+@media (max-width: 1279px) {
+  .grid-2x2:not(.is-focused) { grid-template-columns: 1fr; grid-template-rows: repeat(4, minmax(220px, 1fr)); overflow: auto; }
+}
+
+/* ---------- placement / drawing overlays (shell) --------------------- */
+.mode-banner {
+  position: absolute;
+  top: var(--s-4);
+  left: 50%;
+  z-index: var(--z-overlay);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 6px var(--s-3);
+  background: var(--surface-hud);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--amber-line);
+  font-family: var(--font-meta);
+  font-size: var(--fs-micro);
+  letter-spacing: var(--track-meta-wider);
+  text-transform: uppercase;
+  color: var(--amber);
+}
+.mode-banner em { font-style: normal; color: var(--fg-3); letter-spacing: var(--track-meta); }
+.zone-overlay { position: absolute; inset: 0; z-index: var(--z-overlay); cursor: crosshair; }
+.zone-overlay svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.zone-overlay polygon { fill: var(--amber-soft); stroke: var(--amber); stroke-width: 1; }
+.zone-overlay rect { fill: var(--amber); }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
