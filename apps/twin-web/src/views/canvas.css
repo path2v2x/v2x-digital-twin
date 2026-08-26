@@ -1,0 +1,499 @@
+/* ===================================================================
+ * Canvas-local design layer — CanvasLane (src/views/**).
+ *
+ * Kept out of index.css on purpose: the chrome lane owns that file, this lane
+ * owns this one, so there is no shared cascade to fight over. The view
+ * components import it directly.
+ *
+ * PRECEDENTS. Every recipe below is taken from the authoritative editor
+ * (simforge-oss, studio/app/dashboard/scenario/editor/**), not invented:
+ *
+ *   regions/slots/HifiPreviewSlot.tsx — the closest existing surface to this
+ *   lane's camera comparison: an on-demand native render shown beside the live
+ *   Three canvas. It is a <figure> card, `border border-border/70 bg-card/95
+ *   shadow-xl backdrop-blur`, with a `border-b border-border/60 px-2 py-1`
+ *   header whose label is 11px/500 uppercase tracking-wide in the feature
+ *   accent, a WIDTH-DRIVEN image (`block w-full`, aspect carried by the camera
+ *   contract), and a `border-t border-border/60` provenance <figcaption> in
+ *   `font-mono text-[10px] leading-4 text-muted-foreground` holding
+ *   lowercase `label value` pairs at gap-x-3. That is exactly the shape of a
+ *   channel here, so .cv-chan is that card.
+ *
+ *   tutorial/InteractiveTutorialOverlay.tsx — the contextual floating card:
+ *   bg rgba(17,18,15,.95), backdrop blur(24px), 1px border (rgba(232,224,68,.55)
+ *   accented / rgba(255,255,255,.10) neutral), shadow 0 25px 50px -12px
+ *   rgba(0,0,0,.5), 16px padding; meta eyebrow at 9px/700 uppercase .16em;
+ *   display-face heading 16px/600; body copy 12px/20px at 60%; footnote
+ *   10px/16px at 40%; amber hint box 1px rgba(232,224,68,.3) on
+ *   rgba(232,224,68,.08) with a pulsing 8px dot. That is .cv-card.
+ *
+ *   timeline/TimelineGlassSurface.tsx — chrome over a moving image:
+ *   rgba(0,0,0,.15) + blur(72px) saturate(1.85) contrast(1.05) + 1px
+ *   rgba(255,255,255,.25) + inset hairline. That is .cv-glass.
+ *
+ *   status/ScenarioNotificationCard.tsx — severity chrome and the 28px icon
+ *   button at 55% foreground, hover rgba(255,255,255,.1).
+ *
+ * TOKENS. Shared tokens are used where they exist; the literal after each
+ * `var()` is studio's own value (globals.css: --background 0 0% 4%,
+ * --card 0 0% 6%, --border 0 0% 12%, --muted-foreground 0 0% 55%,
+ * --foreground 0 0% 93%, --accent-brand #E8E044, --radius 0), so a rename in
+ * index.css degrades to the correct colour instead of an inherited default.
+ * --font-meta carries studio's declared stack: Share Tech Mono first, falling
+ * back to ui-monospace exactly as the shipped editor does.
+ *
+ * CLASS INVENTORY
+ *   roots      .cv-view .cv-stage .cv-overlay .cv-slot--tl|--tr|--bl
+ *   surfaces   .cv-card (--accent --warn --tight) .cv-glass
+ *   type       .cv-eyebrow (--on --warn) .cv-title .cv-copy .cv-note
+ *              .cv-prov .cv-prov b
+ *   readout    .cv-readout (.is-idle) .cv-readout__value .cv-readout__unit
+ *              .cv-facts
+ *   controls   .cv-action (--primary --danger --block --sm) .cv-seg
+ *              .cv-seg__item .cv-iconbtn .cv-keys .cv-key (.is-held)
+ *   status     .cv-pill (--on --ok --warn --down) .cv-dot (--on --ok --off
+ *              --warn --down) .cv-hint (--warn)
+ *   cameras    .cv-cams .cv-cams__grid .cv-chan .cv-chan__head .cv-chan__id
+ *              .cv-pair .cv-pane .cv-pane__media .cv-seam .cv-badge
+ *              (--live --recorded --twin --down) .cv-fail .cv-pane__note
+ *              .cv-empty
+ * =================================================================== */
+
+.cv-view {
+  --cv-accent: var(--accent-brand, var(--amber, #e8e044));
+  --cv-accent-line: rgba(232, 224, 68, .42);
+  --cv-accent-soft: rgba(232, 224, 68, .08);
+  --cv-fg: var(--fg, #ededed);
+  --cv-fg-2: rgba(237, 237, 237, .68);
+  --cv-fg-3: rgba(237, 237, 237, .45);
+  --cv-fg-4: rgba(237, 237, 237, .35);
+  --cv-fg-5: rgba(237, 237, 237, .25);
+  /* studio: --muted-foreground 0 0% 55% */
+  --cv-muted-fg: #8c8c8c;
+  /* studio: border-border/70 and /60 over --border 0 0% 12% */
+  --cv-line: rgba(255, 255, 255, .1);
+  --cv-line-soft: rgba(255, 255, 255, .07);
+  --cv-line-strong: rgba(255, 255, 255, .22);
+  /* studio: bg-card/95 over --card 0 0% 6% */
+  --cv-chan-bg: rgba(15, 15, 15, .95);
+  --cv-card-bg: rgba(17, 18, 15, .95);
+  --cv-void: var(--surface-deep, #050607);
+  --cv-plate: var(--surface-base, #0a0a0a);
+  --cv-ok: var(--ok, #57c785);
+  --cv-warn: var(--warn, #f0a13c);
+  --cv-danger: var(--danger, #ff6b5e);
+  --cv-meta-face: var(--font-meta, 'Share Tech Mono', 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace);
+  --cv-body-face: var(--font-body, Barlow, system-ui, sans-serif);
+  --cv-display-face: var(--font-display, 'Bricolage Grotesque', system-ui, sans-serif);
+  --cv-ease: var(--ease, cubic-bezier(.16, 1, .3, 1));
+
+  /* Clearance for the floating chrome. The shell may restate these on the
+   * canvas element if the bar, rail or dock changes measure; the defaults
+   * already clear the shipped 56px bar, 48px rail and centred dock. */
+  --cv-top: 72px;
+  --cv-left: 64px;
+  --cv-right: 20px;
+  --cv-bottom: 172px;
+
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--cv-void);
+  font-family: var(--cv-body-face);
+}
+
+/* The 3D render is the page: full-bleed, everything else floats on it. */
+.cv-stage { position: absolute; inset: 0; }
+.cv-stage > canvas, .cv-stage > div { display: block; width: 100%; height: 100%; }
+
+.cv-overlay { position: absolute; inset: 0; z-index: 2; pointer-events: none; }
+.cv-slot { position: absolute; display: flex; flex-direction: column; gap: 10px; pointer-events: auto; }
+.cv-slot--tl { top: var(--cv-top); left: var(--cv-left); align-items: flex-start; }
+.cv-slot--tr { top: var(--cv-top); right: var(--cv-right); align-items: flex-end; }
+.cv-slot--bl { bottom: var(--cv-bottom); left: var(--cv-left); align-items: flex-start; }
+
+/* ---------- surfaces ------------------------------------------------- */
+.cv-card {
+  width: min(320px, calc(100vw - 96px));
+  padding: 16px;
+  background: var(--cv-card-bg);
+  backdrop-filter: blur(24px);
+  border: 1px solid var(--cv-line);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, .5);
+}
+.cv-card--accent { border-color: rgba(232, 224, 68, .55); }
+.cv-card--warn { border-color: rgba(240, 161, 60, .45); }
+.cv-card--tight { width: auto; padding: 10px 12px; }
+.cv-card__head { display: flex; align-items: center; gap: 10px; }
+.cv-card__head .cv-eyebrow { flex: 1 1 auto; min-width: 0; }
+
+.cv-glass {
+  background: rgba(0, 0, 0, .15);
+  backdrop-filter: blur(72px) saturate(1.85) contrast(1.05);
+  border: 1px solid var(--cv-line-strong);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), 0 18px 48px rgba(0, 0, 0, .3);
+}
+
+/* ---------- type ----------------------------------------------------- */
+.cv-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--cv-meta-face);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cv-fg-4);
+}
+.cv-eyebrow--on { color: var(--cv-accent); }
+.cv-eyebrow--warn { color: var(--cv-warn); }
+.cv-title { margin-top: 6px; font-family: var(--cv-display-face); font-size: 16px; font-weight: 600; line-height: 24px; color: var(--cv-fg); }
+.cv-copy { margin-top: 8px; font-family: var(--cv-body-face); font-size: 12px; line-height: 20px; color: rgba(255, 255, 255, .6); }
+.cv-note { margin-top: 12px; font-family: var(--cv-body-face); font-size: 10px; line-height: 16px; color: rgba(255, 255, 255, .4); }
+
+/* The provenance strip: lowercase `label value` pairs, mono 10px/16px. */
+.cv-prov {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  padding: 4px 8px;
+  border-top: 1px solid var(--cv-line-soft);
+  font-family: var(--cv-meta-face);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--cv-muted-fg);
+  font-variant-numeric: tabular-nums;
+}
+.cv-prov b { font-weight: 400; color: var(--cv-fg-2); }
+
+/* ---------- instrument readout --------------------------------------- */
+.cv-readout { display: flex; align-items: flex-end; gap: 8px; margin-top: 12px; }
+.cv-readout__value {
+  font-family: var(--cv-display-face);
+  font-size: 52px;
+  font-weight: 700;
+  line-height: .82;
+  letter-spacing: -.03em;
+  color: var(--cv-fg);
+  font-variant-numeric: tabular-nums;
+}
+.cv-readout.is-idle .cv-readout__value { color: var(--cv-fg-4); }
+.cv-readout__unit {
+  padding-bottom: 4px;
+  font-family: var(--cv-meta-face);
+  font-size: 10px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cv-fg-4);
+}
+
+/* Secondary instrument values. A definition list so a screen reader reads
+ * "gear, 2" as one pair instead of two loose strings. */
+.cv-facts { display: flex; gap: 18px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--cv-line-soft); }
+.cv-facts > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cv-facts dt { font-family: var(--cv-meta-face); font-size: 9px; letter-spacing: .16em; text-transform: uppercase; color: var(--cv-fg-5); }
+.cv-facts dd {
+  overflow: hidden;
+  max-width: 180px;
+  font-family: var(--cv-meta-face);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--cv-fg-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- controls ------------------------------------------------- */
+.cv-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--cv-line-strong);
+  background: transparent;
+  font-family: var(--cv-meta-face);
+  font-size: 10px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cv-fg-2);
+  transition: background 160ms var(--cv-ease), color 160ms var(--cv-ease), border-color 160ms var(--cv-ease);
+}
+.cv-action:hover { color: var(--cv-fg); border-color: rgba(255, 255, 255, .34); background: rgba(255, 255, 255, .06); }
+.cv-action--primary { color: #0a0a0c; background: var(--cv-accent); border-color: var(--cv-accent); }
+.cv-action--primary:hover { color: #0a0a0c; background: #f5ed5a; border-color: #f5ed5a; }
+.cv-action--danger { color: var(--cv-danger); border-color: rgba(255, 107, 94, .45); }
+.cv-action--danger:hover { color: var(--cv-danger); background: rgba(255, 107, 94, .12); border-color: var(--cv-danger); }
+.cv-action--block { width: 100%; margin-top: 14px; }
+.cv-action--sm { height: 24px; padding: 0 9px; font-size: 9px; letter-spacing: .14em; }
+
+.cv-seg { display: inline-flex; border: 1px solid var(--cv-line); }
+.cv-seg__item {
+  height: 28px;
+  padding: 0 11px;
+  border: 0;
+  border-left: 1px solid var(--cv-line);
+  background: transparent;
+  font-family: var(--cv-meta-face);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cv-fg-4);
+  transition: background 160ms var(--cv-ease), color 160ms var(--cv-ease);
+}
+.cv-seg__item:first-child { border-left: 0; }
+.cv-seg__item:hover { color: var(--cv-fg); background: rgba(255, 255, 255, .06); }
+.cv-seg__item[aria-checked='true'] { color: var(--cv-accent); background: var(--cv-accent-soft); box-shadow: inset 0 0 0 1px var(--cv-accent-line); }
+
+.cv-iconbtn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, .55);
+  transition: background 160ms var(--cv-ease), color 160ms var(--cv-ease);
+}
+.cv-iconbtn:hover { color: #fff; background: rgba(255, 255, 255, .1); }
+.cv-iconbtn[aria-pressed='true'] { color: var(--cv-accent); background: var(--cv-accent-soft); }
+.cv-iconbtn svg { width: 14px; height: 14px; }
+
+.cv-keys { display: flex; align-items: center; gap: 5px; }
+.cv-key {
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: 1px solid var(--cv-line-strong);
+  background: rgba(255, 255, 255, .05);
+  font-family: var(--cv-meta-face);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--cv-fg-2);
+  transition: background 90ms var(--cv-ease), color 90ms var(--cv-ease), border-color 90ms var(--cv-ease);
+}
+.cv-key.is-held { color: #0a0a0c; background: var(--cv-accent); border-color: var(--cv-accent); }
+
+/* ---------- status --------------------------------------------------- */
+.cv-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px;
+  background: rgba(15, 15, 15, .9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, .18);
+  font-family: var(--cv-meta-face);
+  font-size: 9px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--cv-fg-3);
+}
+.cv-pill--on { color: var(--cv-accent); border-color: rgba(232, 224, 68, .35); }
+.cv-pill--ok { color: var(--cv-ok); border-color: rgba(87, 199, 133, .35); }
+.cv-pill--warn { color: var(--cv-warn); border-color: rgba(240, 161, 60, .35); }
+.cv-pill--down { color: var(--cv-danger); border-color: rgba(255, 107, 94, .35); }
+
+.cv-dot { width: 6px; height: 6px; flex: 0 0 6px; background: var(--cv-fg-4); }
+.cv-dot--on { background: var(--cv-accent); animation: cv-pulse 2s var(--cv-ease) infinite; }
+.cv-dot--ok { background: var(--cv-ok); animation: cv-pulse 2s var(--cv-ease) infinite; }
+.cv-dot--off { background: var(--cv-fg-4); opacity: .35; }
+.cv-dot--warn { background: var(--cv-warn); }
+.cv-dot--down { background: var(--cv-danger); }
+@keyframes cv-pulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+
+/* The editor's standing callout: amber hairline, 8% amber wash, live dot. */
+.cv-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid rgba(232, 224, 68, .3);
+  background: var(--cv-accent-soft);
+  font-family: var(--cv-body-face);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--cv-accent);
+}
+.cv-hint--warn { border-color: rgba(240, 161, 60, .3); background: rgba(240, 161, 60, .08); color: var(--cv-warn); }
+
+/* ===================================================================
+ * CAMERAS — four channels, each a real feed beside its projection match.
+ *
+ * A channel is the HifiPreviewSlot card: header strip, media, provenance
+ * strip. Panes are WIDTH-driven at the channel's intrinsic aspect
+ * (aspect-ratio: var(--pane-ar)), the same way that slot lets the contract's
+ * width/height decide the image box, so a pane is 100% imagery: the earlier
+ * contain-fit inside a 1fr row letterboxed ~130px of black per pane. The
+ * residual grid height becomes padding, which is where the floating top bar
+ * and timeline dock sit — clearance, not waste.
+ * =================================================================== */
+.cv-cams { background: var(--cv-void); }
+.cv-cams__grid {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-content: center;
+  gap: 14px;
+  padding: var(--cv-top) var(--cv-right) var(--cv-bottom) var(--cv-left);
+  overflow: auto;
+}
+.cv-cams__grid[data-focused='true'] { grid-template-columns: 1fr; }
+
+.cv-chan {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--cv-chan-bg);
+  border: 1px solid var(--cv-line);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, .35), 0 8px 10px -6px rgba(0, 0, 0, .3);
+  backdrop-filter: blur(8px);
+}
+.cv-chan[hidden] { display: none; }
+.cv-chan .cv-prov { border-top-color: var(--cv-line-soft); }
+
+.cv-chan__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--cv-line-soft);
+}
+.cv-chan__id {
+  font-family: var(--cv-body-face);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .025em;
+  text-transform: uppercase;
+  color: var(--cv-accent);
+}
+.cv-chan__head .cv-pill { margin-left: auto; }
+
+.cv-pair { display: grid; grid-template-columns: 1fr 22px 1fr; align-items: stretch; }
+
+.cv-pane {
+  position: relative;
+  aspect-ratio: var(--pane-ar, 1.33333);
+  min-width: 0;
+  overflow: hidden;
+  background: #000;
+}
+.cv-pane > img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.cv-pane__media { position: absolute; inset: 0; }
+.cv-pane__media > canvas, .cv-pane__media > div { display: block; width: 100%; height: 100%; }
+
+/* The labelled seam. Two images that look alike must never be mistaken for
+ * one another, so the boundary takes a real column with its own label rather
+ * than a hairline the eye can miss. */
+.cv-seam {
+  position: relative;
+  display: grid;
+  place-items: center;
+  background: var(--cv-plate);
+}
+.cv-seam::before,
+.cv-seam::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  width: 1px;
+  background: var(--cv-line-strong);
+}
+.cv-seam::before { top: 0; height: max(0px, calc(50% - 38px)); }
+.cv-seam::after { bottom: 0; height: max(0px, calc(50% - 38px)); }
+.cv-seam span {
+  position: relative;
+  padding: 5px 3px;
+  writing-mode: vertical-rl;
+  font-family: var(--cv-meta-face);
+  font-size: 9px;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cv-fg-3);
+}
+
+.cv-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 7px;
+  background: rgba(15, 15, 15, .9);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, .16);
+  font-family: var(--cv-meta-face);
+  font-size: 9px;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--cv-fg-2);
+}
+.cv-badge--live { color: var(--cv-accent); border-color: rgba(232, 224, 68, .35); }
+.cv-badge--recorded { color: var(--cv-fg-3); }
+.cv-badge--twin { color: var(--cv-fg-2); }
+.cv-badge--down { color: var(--cv-danger); border-color: rgba(255, 107, 94, .35); }
+
+/* A dropped channel says so and offers the retry. It never shows a frame. */
+.cv-fail {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 16px;
+  text-align: center;
+  background:
+    repeating-linear-gradient(135deg, rgba(255, 107, 94, .05) 0 8px, transparent 8px 16px),
+    var(--cv-plate);
+}
+.cv-fail .cv-action { margin: 0; }
+
+.cv-pane__note { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; }
+.cv-pane__note .cv-hint { margin: 0; font-size: 11px; }
+
+/* Narrower than the four-up measure: one channel per row, then stack the pair
+ * so neither image drops below a readable size. */
+@media (max-width: 1099px) {
+  .cv-cams__grid { grid-template-columns: 1fr; align-content: start; }
+}
+@media (max-width: 719px) {
+  .cv-pair { grid-template-columns: 1fr; grid-template-rows: auto 22px auto; }
+  .cv-seam span { writing-mode: horizontal-tb; padding: 3px 6px; }
+  .cv-seam::before, .cv-seam::after { top: 50%; bottom: auto; width: max(0px, calc(50% - 50px)); height: 1px; }
+  .cv-seam::before { left: 0; }
+  .cv-seam::after { left: auto; right: 0; }
+}
+
+.cv-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.cv-empty .cv-copy { max-width: 340px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .cv-dot--on, .cv-dot--ok { animation: none; }
+}

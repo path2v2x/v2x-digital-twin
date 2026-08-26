@@ -3,7 +3,7 @@ import { TwinScene } from './components/TwinScene';
 import { Inspector } from './components/shell/Inspector';
 import { TimelineDock } from './components/shell/TimelineDock';
 import { Toasts } from './components/shell/Toasts';
-import { ToolRail, type Armed, type ToolId } from './components/shell/ToolRail';
+import { ToolRail, type Armed, type ToolId, type WorldTool } from './components/shell/ToolRail';
 import { TopBar } from './components/shell/TopBar';
 import { ZoneOverlay } from './components/shell/ZoneOverlay';
 import { CameraCompareView } from './views/CameraCompareView';
@@ -14,8 +14,9 @@ import { useZones } from './state/zones';
 
 const MODES: readonly CanvasMode[] = ['scene', 'drive', 'cameras'];
 
-/** One editor surface. The top bar switches which canvas composition is
- * mounted; every twin operation lives in the rail, inspector or dock. */
+/** One editor surface. The canvas is full-bleed and every other surface floats
+ * over it; the top bar switches which canvas composition is mounted, and every
+ * twin operation lives in the rail, the inspector or the dock. */
 export default function App() {
   const params = new URLSearchParams(location.search);
   const fixtureMode = params.get('fixture') === '1';
@@ -26,7 +27,8 @@ export default function App() {
   const zoneTool = useZones(drive.sendOp);
 
   const [mode, setMode] = useState<CanvasMode>(requestedMode && MODES.includes(requestedMode) ? requestedMode : 'scene');
-  const [tool, setTool] = useState<ToolId | null>('truth');
+  const [tool, setTool] = useState<ToolId | null>(null);
+  const [world, setWorld] = useState<WorldTool | null>(null);
   const [armed, setArmed] = useState<Armed | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [weather, setWeather] = useState('clear');
@@ -35,8 +37,9 @@ export default function App() {
 
   const frame = twin.frames.at(-1);
   const actors = frame?.actors ?? [];
+  const poses = frame?.scene.actors ?? [];
   const selectedActor = actors.find((actor) => actor.id === selectedId) ?? null;
-  const selectedPose = frame?.scene.actors.find((actor) => actor.id === selectedId) ?? null;
+  const selectedPose = poses.find((actor) => actor.id === selectedId) ?? null;
   // EVA alerts (from /twin) and operation notices (from /drive) share one surface.
   const alerts = [...twin.alerts, ...drive.notices].filter((alert) => !acknowledged.includes(alert.id));
 
@@ -57,17 +60,25 @@ export default function App() {
     setTool(next);
   }, [zoneTool]);
 
+  /* One right-hand slot: invoking a world control drops the object selection
+   * rather than stacking a second panel over the canvas. */
+  const changeWorld = useCallback((next: WorldTool | null) => {
+    if (next) setSelectedId(null);
+    setWorld(next);
+  }, []);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (armed) setArmed(null);
       else if (zoneTool.drawing) zoneTool.cancel();
+      else if (world) setWorld(null);
       else if (tool) setTool(null);
       else setSelectedId(null);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [armed, tool, zoneTool]);
+  }, [armed, tool, world, zoneTool]);
 
   const commitPlacement = useCallback(() => {
     if (!armed) return;
@@ -85,7 +96,23 @@ export default function App() {
     twin.send({ type: 'twin_replay', start: start.toISOString(), speed: 1 });
   }, [twin]);
 
+  const select = useCallback((id: string | null) => {
+    if (id) setWorld(null);
+    setSelectedId(id);
+  }, []);
+
   return <div className="editor">
+    <div className={`canvas${armed ? ' canvas--placing' : ''}`}>
+      <div className="canvas__stage">
+        {mode === 'scene' && <TwinScene frames={twin.frames} />}
+        {mode === 'drive' && <DriveView frames={twin.frames} drive={drive} fixtureMode={fixtureMode} />}
+        {mode === 'cameras' && <CameraCompareView frames={twin.frames} cameras={twin.cameras} />}
+      </div>
+
+      {mode === 'scene' && zoneTool.drawing && <ZoneOverlay zoneTool={zoneTool} />}
+      {mode === 'scene' && armed && <div className="click-capture" onClick={commitPlacement} />}
+    </div>
+
     <TopBar
       mode={mode}
       onMode={changeMode}
@@ -94,53 +121,51 @@ export default function App() {
       clockMode={twin.mode}
       alertCount={twin.alerts.length}
       onAlerts={() => setAcknowledged([])}
+      settingsOpen={world !== null}
+      onSettings={() => changeWorld(world ? null : 'weather')}
     />
-    <div className="editor__body">
-      <ToolRail
-        mode={mode}
-        tool={tool}
-        onTool={changeTool}
-        actors={actors}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        armed={armed}
-        onArm={setArmed}
-        zoneTool={zoneTool}
-        onTrajectory={(file) => drive.sendOp({ type: 'start_trajectory', file, vehicle: TRAJECTORY_VEHICLE })}
-      />
 
-      <div className={`canvas${armed ? ' canvas--placing' : ''}`}>
-        <div className="canvas__stage">
-          {mode === 'scene' && <TwinScene frames={twin.frames} />}
-          {mode === 'drive' && <DriveView frames={twin.frames} drive={drive} fixtureMode={fixtureMode} />}
-          {mode === 'cameras' && <CameraCompareView frames={twin.frames} cameras={twin.cameras} />}
-        </div>
+    <ToolRail
+      mode={mode}
+      tool={tool}
+      onTool={changeTool}
+      world={world}
+      onWorld={changeWorld}
+      actors={actors}
+      selectedId={selectedId}
+      onSelect={select}
+      armed={armed}
+      onArm={setArmed}
+      zoneTool={zoneTool}
+      onTrajectory={(file) => drive.sendOp({ type: 'start_trajectory', file, vehicle: TRAJECTORY_VEHICLE })}
+    />
 
-        {mode === 'scene' && zoneTool.drawing && <ZoneOverlay zoneTool={zoneTool} />}
-        {mode === 'scene' && armed && <div className="click-capture" onClick={commitPlacement} />}
+    {armed && <div className="mode-banner">Placing {armed.entry.name}<em>click canvas to commit · esc to cancel</em></div>}
+    {zoneTool.drawing && <div className="mode-banner">Drawing zone · {zoneTool.vertices.length} vertices<em>click canvas to add · save in the panel</em></div>}
 
-        {armed && <div className="mode-banner">Placing {armed.entry.name}<em>click canvas to commit · esc to cancel</em></div>}
-        {zoneTool.drawing && <div className="mode-banner">Drawing zone · {zoneTool.vertices.length} vertices<em>click canvas to add · save in the panel</em></div>}
+    <Inspector
+      actor={selectedActor}
+      sceneActor={selectedPose}
+      world={world}
+      onClose={() => { setSelectedId(null); setWorld(null); }}
+      weather={weather}
+      onWeather={(preset) => { setWeather(preset); drive.sendOp({ type: 'set_weather', params: WEATHER_PRESETS[preset] ?? WEATHER_PRESETS['clear'] }); }}
+      traffic={traffic}
+      onTraffic={(preset) => { setTraffic(preset); drive.sendOp({ type: 'spawn_traffic', preset }); }}
+    />
 
-        <TimelineDock
-          mode={mode}
-          clockMode={twin.mode}
-          clock={twin.clock}
-          onLive={() => { twin.setMode('live'); twin.send({ type: 'twin_live' }); }}
-          onSeek={seek}
-        />
-        <Toasts alerts={alerts} onDismiss={(id) => { setAcknowledged((current) => [...current, id]); drive.dismissNotice(id); }} />
-      </div>
+    <TimelineDock
+      mode={mode}
+      clockMode={twin.mode}
+      clock={twin.clock}
+      actors={actors}
+      poses={poses}
+      selectedId={selectedId}
+      onSelect={select}
+      onLive={() => { twin.setMode('live'); twin.send({ type: 'twin_live' }); }}
+      onSeek={seek}
+    />
 
-      {(mode === 'scene' || selectedActor) && <Inspector
-        actor={selectedActor}
-        sceneActor={selectedPose}
-        onClose={() => setSelectedId(null)}
-        weather={weather}
-        onWeather={(preset) => { setWeather(preset); drive.sendOp({ type: 'set_weather', params: WEATHER_PRESETS[preset] ?? WEATHER_PRESETS['clear'] }); }}
-        traffic={traffic}
-        onTraffic={(preset) => { setTraffic(preset); drive.sendOp({ type: 'spawn_traffic', preset }); }}
-      />}
-    </div>
+    <Toasts alerts={alerts} onDismiss={(id) => { setAcknowledged((current) => [...current, id]); drive.dismissNotice(id); }} />
   </div>;
 }
