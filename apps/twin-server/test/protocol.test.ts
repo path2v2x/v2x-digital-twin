@@ -4,14 +4,13 @@
  * and ffmpeg MJPEG service are the objects under test, so real time passes
  * here by design.
  *
- * /drive request types covered (34):
+ * /drive request types covered (31):
  *   server_status list_maps set_map list_vehicles list_objects start_session
  *   control respawn teleport(+teleport_error) end_session camera_switch
  *   set_camera_settings set_weather spawn_traffic despawn_traffic
  *   clear_non_ego_vehicles sync_v2x_zones spawn_object undo_place
  *   spawn_dynamic_actor despawn_dynamic_actor despawn_dynamic_actors
  *   list_scenarios load_scenario save_scenario delete_scenario
- *   list_xosc_scenarios start_xosc_scenario stop_xosc_scenario
  *   list_trajectories upload_trajectory start_trajectory stop_trajectory
  *   trajectory_status
  * /twin request types covered (3): twin_replay twin_live twin_status
@@ -202,14 +201,6 @@ describe('/drive round-trips (every preserved message type)', () => {
     expect(Number(reloaded['spawned'])).toBe(1);
     await roundTrip({ type: 'delete_scenario', file: savedFile }, 'scenario_deleted');
 
-    await roundTrip({ type: 'list_xosc_scenarios' }, 'xosc_list');
-    const xoscStart = await drive.request({ type: 'start_xosc_scenario', file: 'x.xosc' });
-    expect(xoscStart['type']).toBe('error');
-    covered.push('start_xosc_scenario');
-    const xoscStop = await drive.request({ type: 'stop_xosc_scenario' });
-    expect(xoscStop['type']).toBe('error');
-    covered.push('stop_xosc_scenario');
-
     const clearResult = await roundTrip({ type: 'clear_non_ego_vehicles' }, 'non_ego_vehicles_cleared');
     expect(Number(clearResult['preserved'])).toBeGreaterThanOrEqual(1);
 
@@ -248,7 +239,7 @@ describe('/drive round-trips (every preserved message type)', () => {
 
     drive.close();
     // 34 preserved /drive requests + teleport_error variant
-    expect(new Set(covered).size).toBeGreaterThanOrEqual(35);
+    expect(new Set(covered).size).toBeGreaterThanOrEqual(32);
   });
 });
 

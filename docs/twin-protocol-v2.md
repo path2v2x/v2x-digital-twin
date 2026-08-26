@@ -155,11 +155,10 @@ One map ships in v2 (richmond-field-station); `set_map` to it is a no-op ack.
   any user-saved placement scenarios. `load_scenario` of a migrated template
   instantiates its non-ego roles at their authored poses/routes
   (ScenarioPicker contract).
-- `list_xosc_scenarios`/`start_xosc_scenario`/`stop_xosc_scenario` are
-  answered with `{"type":"xosc_list","scenarios":[],"status":{"running":false,
-  "scenario_runner_configured":false}}` / an explanatory `error`: OpenSCENARIO
-  execution was CARLA ScenarioRunner; migrated scenarios are engine templates
-  now (use `list_scenarios`/`load_scenario`).
+- The v1 external-scenario-runner message family is **removed**, not stubbed:
+  scenario authoring is engine templates now (`list_scenarios` /
+  `load_scenario`). Clients that still send the retired v1 types get the
+  standard `Unknown message type` error.
 
 ### Traffic presets (preserved)
 
@@ -360,4 +359,4 @@ renders `REAL · LIVE` only when the channel is genuinely live.
   by `truth_frame`.
 - `set_camera_settings` post-processing attrs: acked, no effect (no server
   pixels).
-- OpenSCENARIO ScenarioRunner subprocess: replaced by engine templates.
+- The external scenario-runner subprocess: replaced by engine templates.
