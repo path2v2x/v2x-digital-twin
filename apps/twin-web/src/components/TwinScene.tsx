@@ -1,14 +1,24 @@
 import { useEffect, useRef } from 'react';
 import { ActorRenderer, type ActorView, type CityViewer } from '@simforge/viewer';
 import { CityView } from '@simforge/viewer/react';
-import type { Material, Mesh } from 'three';
-import { applyCalibratedCamera, type TwinCamera } from '../lib/cameras';
+import { Raycaster, Vector3, type Material, type Mesh, type Object3D } from 'three';
+import { applyCalibratedCamera, calibratedPose, type TwinCamera } from '../lib/cameras';
 import { interpolateFrames, type ActorClass, type TruthFrame } from '../lib/truth';
 
 const CATALOG_BY_CLASS: Record<ActorClass, string> = {
   car: 'vehicle.sedan', truck: 'vehicle.box_truck', bus: 'vehicle.bus', motorcycle: 'vehicle.motorcycle',
   bicycle: 'vehicle.bicycle', pedestrian: 'pedestrian.adult', prop: 'street.traffic_cone',
 };
+
+/** What a calibrated camera actually looks at, measured against the loaded map.
+ * `no-coverage` means the bearing leaves the tiled ground entirely; `obstructed`
+ * means scene geometry sits inside the near field. Both exist so a pane can say
+ * why it looks empty instead of rendering an unexplained blank. */
+export interface SceneFraming {
+  state: 'loading' | 'framed' | 'no-coverage' | 'obstructed' | 'error';
+  /** Metres to the first scene surface on the calibrated bearing, when hit. */
+  distanceM: number | null;
+}
 
 interface TwinSceneProps {
   frames: readonly TruthFrame[];
@@ -17,7 +27,15 @@ interface TwinSceneProps {
   cameraMode?: 'chase' | 'first-person';
   className?: string;
   onReady?: (viewer: CityViewer) => void;
+  /** Reported for `camera` renders once the map has streamed, then on retry. */
+  onFraming?: (framing: SceneFraming) => void;
 }
+
+/** Ground probe: 2 m steps along the view ray out to 140 m. */
+const PROBE_STEP_M = 2;
+const PROBE_RANGE_M = 140;
+/** Anything this close on the bearing fills the frame rather than framing it. */
+const OBSTRUCTION_M = 4;
 
 function updateSignalHeads(viewer: CityViewer, frame: TruthFrame): void {
   const phaseById: Record<string, string> = Object.fromEntries(frame.signals.map((signal) => [signal.signalId, signal.phase.toLowerCase()]));
@@ -34,15 +52,46 @@ function updateSignalHeads(viewer: CityViewer, frame: TruthFrame): void {
   });
 }
 
-export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase', className, onReady }: TwinSceneProps) {
+function isDescendantOf(object: Object3D, ancestor: Object3D): boolean {
+  for (let node: Object3D | null = object; node; node = node.parent) if (node === ancestor) return true;
+  return false;
+}
+
+/** Measures the calibrated bearing against the streamed map: is there tiled
+ * ground in view, and does anything sit inside the near field. */
+function probeFraming(viewer: CityViewer, camera: TwinCamera, actors: Object3D | null): SceneFraming {
+  const pose = calibratedPose(camera);
+  const groundHeight = viewer.sampleGroundHeight(pose.position[0], pose.position[2]) ?? 0;
+  const origin = new Vector3(pose.position[0], pose.position[1] + groundHeight, pose.position[2]);
+  const direction = new Vector3(pose.target[0], pose.target[1] + groundHeight, pose.target[2]).sub(origin).normalize();
+
+  let covered = false;
+  for (let distance = PROBE_STEP_M; distance <= PROBE_RANGE_M && !covered; distance += PROBE_STEP_M) {
+    covered = viewer.sampleGroundHeight(origin.x + direction.x * distance, origin.z + direction.z * distance) !== null;
+  }
+
+  const raycaster = new Raycaster(origin, direction, 0.2, PROBE_RANGE_M);
+  const hit = raycaster.intersectObject(viewer.scene, true)
+    .find((candidate) => !(actors && isDescendantOf(candidate.object, actors)));
+  const distanceM = hit ? hit.distance : null;
+
+  if (!covered) return { state: 'no-coverage', distanceM };
+  if (distanceM !== null && distanceM < OBSTRUCTION_M) return { state: 'obstructed', distanceM };
+  return { state: 'framed', distanceM };
+}
+
+export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase', className, onReady, onFraming }: TwinSceneProps) {
   const viewerRef = useRef<CityViewer | null>(null);
   const rendererRef = useRef<ActorRenderer | null>(null);
   const framesRef = useRef(frames);
   const followRef = useRef(followActorId);
   const modeRef = useRef(cameraMode);
+  const framingRef = useRef(onFraming);
+  const probeRef = useRef(0);
   framesRef.current = frames;
   followRef.current = followActorId;
   modeRef.current = cameraMode;
+  framingRef.current = onFraming;
 
   useEffect(() => {
     let animation = 0;
@@ -80,7 +129,7 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
       animation = requestAnimationFrame(render);
     };
     animation = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animation);
+    return () => { cancelAnimationFrame(animation); window.clearTimeout(probeRef.current); };
   }, []);
 
   return <CityView
@@ -100,7 +149,18 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
       onReady?.(viewer);
     }}
     onMapLoaded={() => {
-      if (camera && viewerRef.current) applyCalibratedCamera(viewerRef.current, camera);
+      const viewer = viewerRef.current;
+      if (!viewer || !camera) return;
+      applyCalibratedCamera(viewer, camera);
+      framingRef.current?.(probeFraming(viewer, camera, rendererRef.current?.group ?? null));
+      // Tiles keep streaming after the map reports ready, so measure the
+      // bearing again once the near field has settled.
+      window.clearTimeout(probeRef.current);
+      probeRef.current = window.setTimeout(() => {
+        const settled = viewerRef.current;
+        if (settled) framingRef.current?.(probeFraming(settled, camera, rendererRef.current?.group ?? null));
+      }, 2_000);
     }}
+    onError={() => framingRef.current?.({ state: 'error', distanceM: null })}
   />;
 }
