@@ -22,6 +22,45 @@ points into the deleted bridge.
 Protocol details and documented compatibility behavior are authoritative in
 [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).
 
+## The client is moving to SimForge Studio
+
+The twin's user interface is becoming a first-class **Drive** app inside
+`studio` in [SimForgeinc/simforge-oss](https://github.com/SimForgeinc/simforge-oss)
+(branch `feat/drive-continuous-world`), rather than a local look-alike of the
+editor. `apps/twin-web` was a hand-written imitation: 3,496 lines under `src`,
+of which 2,342 (66.99%) were presentational chrome and CSS re-implementing the
+top bar, tool rail, inspector, timeline, toasts, icons and token system that
+Studio already ships.
+
+Studio's Drive app attaches to this server as a `WorldSource`: truth over
+`ws://<host>:8765/twin`, commands over `/drive`, and camera feeds proxied
+same-origin from `:8090`. Verified against this server on 2026-08-25 — world
+clock 4,154.6 s at tick 83,093, `cam-001-ch1` live with a truthful badge and a
+single MJPEG connection open.
+
+Camera calibration is no longer client constants. `config/cameras.json` binds
+the mast to `traffic_light` SignalFeature **372** (measured 0.7 m from the
+surveyed position) and `buildTwinCameras` emits rigs in the shape
+`@simforge/maps` consumes, so pose derives from map geometry. The feature's
+`z_offset` is the signal head at 4.48 m and is *not* the camera height; each
+channel keeps its own 7 m mount.
+
+### `apps/twin-web` is retained deliberately
+
+It still uniquely owns product surfaces that Studio Drive does not yet provide,
+so deleting it now would lose function:
+
+| Surface | Where |
+|---|---|
+| V2X zone drawing and `sync_v2x_zones` | `src/state/zones.ts`, `src/components/shell/ZoneOverlay.tsx` |
+| 24-hour replay control (`twin_replay`) | `src/App.tsx:92-96` |
+| Trajectory playback trigger (`start_trajectory`) | `src/App.tsx:140` |
+
+EVA alerts, ghost mirroring, traffic presets and local publication are
+server-side and already work for either client. `apps/twin-web` should be
+deleted once zones, replay and trajectories exist on the Studio surface — not
+before.
+
 ## Local operation
 
 From the repository root:
