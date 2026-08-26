@@ -134,7 +134,7 @@ function ToolPanel({ definition, mode, onTool, actors, selectedId, onSelect, arm
     </header>
 
     <div className="panel__body scroll">
-      <p className="card__body" style={{ marginBottom: 'var(--s-3)' }}>{definition.sub}</p>
+      <p className="panel__lede">{definition.sub}</p>
 
       {searchable && <input
         className="input"
@@ -149,7 +149,7 @@ function ToolPanel({ definition, mode, onTool, actors, selectedId, onSelect, arm
 
       {definition.id === 'truth' && <TruthList actors={actors} needle={needle} selectedId={selectedId} onSelect={onSelect} />}
 
-      {definition.id === 'scenarios' && <div className="tile-grid" style={{ marginTop: 'var(--s-2)' }}>
+      {definition.id === 'scenarios' && <div className="tile-grid">
         {SCENARIOS.map((entry) => <Tile key={entry.id} entry={entry} armed={armed?.entry.id === entry.id} onClick={() => onArm(armed?.entry.id === entry.id ? null : { tool: 'scenarios', kind: 'scenario', entry })} />)}
       </div>}
 

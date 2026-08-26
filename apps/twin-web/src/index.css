@@ -43,45 +43,39 @@
  *              .dock__identity .dock__label .dock__transport
  *              .dock__ruler .dock__tick .dock__lanes .dock__lane
  *              .dock__lane-id .dock__lane-track .dock__lane-actions
- *              .dock__playhead .dock__clock .dock__grip
+ *              .dock__playhead .dock__clock .dock__scrub
  *              .toasts
- * surfaces     .glass .glass--rail .glass--panel
- *              .card .card--amber .card__eyebrow .card__title
- *              .card__body .card__foot .card__close
+ * surfaces     .card .card--amber .card__title .card__body .card__foot
  *              .panel .panel--left .panel--right .panel__head
  *              .panel__icon .panel__title .panel__sub .panel__body
  *              .panel__foot .panel__close
- * controls     .btn .btn--primary .btn--outline .btn--ghost .btn--danger
- *              .btn--sm    [aria-pressed=true] / .is-active
+ * controls     .btn .btn--primary .btn--outline .btn--danger
+ *              .btn--sm    [aria-pressed=true]
  *              .icon-btn .icon-btn--sm
  *              .action     (icon + label, top-bar right side)
  *              .seg .seg__item
- *              .input .select .range .range-row .range-row__label
- *              .range-row__out .check-row .check .check-state
- *              .switch .switch__knob
+ *              .input
  * status       .pill .pill--ok .pill--active .pill--danger .pill--idle
- *              .dot .dot--ok .dot--active .dot--danger .dot--idle
- *              .badge .badge--ok .badge--warn .badge--danger .badge--live
- * content      .meta .eyebrow .num .kbd .divider .rule .scroll .truncate
+ *              .dot .dot--active .dot--danger .dot--idle
+ * content      .meta .eyebrow .kbd .scroll .truncate
  *              .section-head .section-head__count
  *              .field .field__label .field__value .field__hint
  *              .row .row__label .row__meta      .row.is-selected
  *              .tile-grid .tile                 .tile.is-armed
  *              .hint .hint__dot
  *              .empty .empty__title .empty__text
- *              .skeleton
+ *              .panel__lede
  *              .toast .toast__title .toast__body .toast__close
  *              .toast--warn .toast--danger
- * canvas-local .hud-layer .hud-slot .hud-slot--tl|--tr|--bl|--br|--bc
+ * canvas-local .hud-layer .hud-slot .hud-slot--tl|--tr|--bl
  *              .hud .hud--stack .hud__label .hud__row
  *              .hud-readout .hud-readout__unit
- *              .grid-2x2 (.is-focused) .cell (.is-hidden)
- *              .cell__head .cell__id .cell__status .cell__body
- *              .pane .pane__frame .pane__fit (inline --pane-ar)
- *              .pane__label .pane__note .pane-divider .pane-divider__tag
+ *              .pane__note
  *              .feed-badge .feed-badge--live .feed-badge--recorded
- *              .feed-badge--twin
+ *              .feed-badge--twin .feed-badge--danger
  *              .notice .notice--degraded
+ *              The view lane adds layout-only classes in
+ *              src/views/canvas.css; it never redeclares a token here.
  * overlays     .mode-banner .zone-overlay .click-capture
  * =================================================================== */
 
@@ -347,7 +341,10 @@
   --dock-max-w: 920px;
   --dock-head-h: 48px;
   --dock-lane-h: 40px;
-  --dock-identity-w: 114px;
+  /* Studio's default is 114px, which fits an actor name. The twin's head
+   * cell also carries the transport, so it is widened to keep both buttons
+   * out of the overflow clip; the lanes follow the same measure. */
+  --dock-identity-w: 150px;
   --dock-min-h: 168px;
   --dock-max-h: min(65vh, 520px);
 
@@ -369,7 +366,7 @@
 }
 
 @media (max-width: 1100px) {
-  :root { --panel-w: 260px; --inspector-w: 256px; --dock-identity-w: 96px; }
+  :root { --panel-w: 260px; --inspector-w: 256px; --dock-identity-w: 132px; }
 }
 
 /* ------------------------------------------------------------------ base */
@@ -601,8 +598,8 @@ button:disabled { cursor: default; opacity: .28; }
 .dock::before {
   content: '';
   position: absolute;
-  left: var(--s-10, 40px);
-  right: var(--s-10, 40px);
+  left: 40px;
+  right: 40px;
   bottom: -20px;
   height: 64px;
   background: rgba(0, 0, 0, .45);
@@ -661,9 +658,15 @@ button:disabled { cursor: default; opacity: .28; }
   color: var(--fg-3);
 }
 .dock__transport { display: flex; align-items: center; gap: 2px; padding: 0 var(--s-2); }
+/* Absolute, not a flex sibling: a clock in the ruler's flow would eat track
+ * width and the playhead's percentage would no longer land on its tick. */
 .dock__clock {
-  margin-left: auto;
-  padding-right: var(--s-3);
+  position: absolute;
+  top: 5px;
+  right: var(--s-3);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   font-family: var(--font-meta);
   font-size: var(--text-meta);
   line-height: var(--leading-meta);
@@ -760,23 +763,6 @@ button:disabled { cursor: default; opacity: .28; }
 }
 .dock__lane-track.is-live { color: var(--amber); }
 
-.dock__grip {
-  position: absolute;
-  left: 50%;
-  top: 0;
-  z-index: 3;
-  width: 96px;
-  height: 12px;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 4px;
-  transform: translateX(-50%);
-  cursor: ns-resize;
-}
-.dock__grip::before { content: ''; width: 40px; height: 1px; background: var(--line-strong); }
-.dock__grip:hover::before { background: var(--amber-line-strong); }
-
 /* --- notification dock ------------------------------------------------ */
 .toasts {
   position: absolute;
@@ -828,28 +814,6 @@ button:disabled { cursor: default; opacity: .28; }
 }
 
 /* -------------------------------------------------------------- surfaces */
-.glass {
-  background: var(--glass-card-bg);
-  border: 1px solid var(--line-strong);
-  box-shadow: var(--glass-card-shadow), var(--glass-card-ring);
-  backdrop-filter: var(--glass-card-blur);
-  -webkit-backdrop-filter: var(--glass-card-blur);
-}
-.glass--rail {
-  background: var(--glass-rail-bg);
-  border-color: var(--line-glass);
-  box-shadow: var(--glass-rail-shadow);
-  backdrop-filter: var(--glass-rail-blur);
-  -webkit-backdrop-filter: var(--glass-rail-blur);
-}
-.glass--panel {
-  background: var(--glass-panel-bg);
-  border-color: var(--line-glass);
-  box-shadow: var(--glass-panel-shadow);
-  backdrop-filter: var(--glass-rail-blur);
-  -webkit-backdrop-filter: var(--glass-rail-blur);
-}
-
 /* A contextual card over the canvas: uppercase meta eyebrow, display
  * heading, body copy. This is the tutorial/interruption card pattern. */
 .card {
@@ -864,19 +828,9 @@ button:disabled { cursor: default; opacity: .28; }
   -webkit-backdrop-filter: var(--glass-card-blur);
 }
 .card--amber { border-color: var(--amber-line); }
-.card__eyebrow {
-  font-family: var(--font-meta);
-  font-size: var(--text-micro);
-  line-height: var(--leading-micro);
-  font-weight: 700;
-  letter-spacing: var(--track-meta-wide);
-  text-transform: uppercase;
-  color: var(--amber);
-}
 .card__title { font-family: var(--font-display); font-size: var(--text-lg); line-height: var(--leading-lg); font-weight: 600; color: var(--fg-1); }
 .card__body { font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--fg-2); }
 .card__foot { display: flex; align-items: center; gap: var(--s-2); margin-top: var(--s-1); }
-.card__close { position: absolute; top: var(--s-2); right: var(--s-2); }
 
 /* On-demand panels: the rail's tool drawer (left) and the inspector
  * (right). Neither is ever permanently mounted. */
@@ -957,7 +911,6 @@ button:disabled { cursor: default; opacity: .28; }
 }
 .btn--outline { border-color: rgba(31, 31, 31, .7); background: rgba(10, 10, 10, .7); }
 .btn--outline:hover:not(:disabled) { border-color: var(--line-strong); background: rgba(255, 255, 255, .06); }
-.btn--ghost:hover:not(:disabled) { background: rgba(255, 255, 255, .08); }
 /* The amber CTA. One per surface at most: it is the current action, not
  * a colour. Outline until hover, matching the editor's own primary. */
 .btn--primary { border-color: rgba(232, 224, 68, .45); background: rgba(15, 15, 15, .9); color: var(--amber); }
@@ -966,7 +919,7 @@ button:disabled { cursor: default; opacity: .28; }
 .btn--danger { border-color: var(--danger-line); color: var(--danger); }
 .btn--danger:hover:not(:disabled) { background: rgba(248, 113, 113, .14); border-color: var(--danger); }
 .btn--sm { height: 24px; padding: 0 var(--s-2); font-size: var(--text-micro); }
-.btn[aria-pressed='true'], .btn.is-active { border-color: var(--amber-line); background: var(--amber-fill); color: var(--amber); }
+.btn[aria-pressed='true'] { border-color: var(--amber-line); background: var(--amber-fill); color: var(--amber); }
 
 .icon-btn {
   display: inline-grid;
@@ -979,7 +932,7 @@ button:disabled { cursor: default; opacity: .28; }
 }
 .icon-btn:hover:not(:disabled) { background: rgba(255, 255, 255, .1); color: var(--fg-1); }
 .icon-btn--sm { width: 22px; height: 22px; }
-.icon-btn[aria-pressed='true'], .icon-btn.is-active { color: var(--amber); border-color: var(--amber-line); background: var(--amber-fill); }
+.icon-btn[aria-pressed='true'] { color: var(--amber); border-color: var(--amber-line); background: var(--amber-fill); }
 
 /* Icon + label, the top bar's right-hand affordances. */
 .action {
@@ -996,7 +949,7 @@ button:disabled { cursor: default; opacity: .28; }
   transition: background var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease;
 }
 .action:hover:not(:disabled) { background: rgba(255, 255, 255, .08); color: var(--fg-1); }
-.action[aria-pressed='true'], .action.is-active { color: var(--amber); border-color: var(--amber-line); background: var(--amber-fill); }
+.action[aria-pressed='true'] { color: var(--amber); border-color: var(--amber-line); background: var(--amber-fill); }
 
 /* Segmented control — the canvas-mode switch. The active segment carries
  * the amber; the rest stay neutral so the group reads as one control. */
@@ -1008,7 +961,9 @@ button:disabled { cursor: default; opacity: .28; }
   height: 24px;
   padding: 0 10px;
   border: 1px solid transparent;
-  color: var(--fg-3);
+  /* The unselected modes are the primary navigation of the whole app, so
+   * they sit at --fg-2 rather than the --fg-3 used for passive labels. */
+  color: var(--fg-2);
   font-family: var(--font-meta);
   font-size: var(--text-micro);
   line-height: 1;
@@ -1017,14 +972,14 @@ button:disabled { cursor: default; opacity: .28; }
   transition: background var(--dur-1) ease, color var(--dur-1) ease, border-color var(--dur-1) ease;
 }
 .seg__item:hover { color: var(--fg-1); }
-.seg__item[aria-checked='true'], .seg__item.is-active {
+.seg__item[aria-checked='true'] {
   background: var(--amber-fill);
   border-color: var(--amber-line);
   color: var(--amber);
   box-shadow: inset 0 1px rgba(255, 255, 255, .12);
 }
 
-.input, .select {
+.input {
   width: 100%;
   height: 28px;
   padding: 0 var(--s-2);
@@ -1036,37 +991,7 @@ button:disabled { cursor: default; opacity: .28; }
   transition: border-color var(--dur-1) ease, background var(--dur-1) ease;
 }
 .input::placeholder { color: var(--fg-5); }
-.input:focus, .select:focus { border-color: var(--amber-line); background: rgba(255, 255, 255, .06); }
-.select {
-  appearance: none;
-  padding-right: var(--s-6);
-  background-image: linear-gradient(45deg, transparent 50%, var(--fg-3) 50%), linear-gradient(135deg, var(--fg-3) 50%, transparent 50%);
-  background-position: calc(100% - 13px) 12px, calc(100% - 9px) 12px;
-  background-size: 4px 4px;
-  background-repeat: no-repeat;
-}
-.select option { background: #111113; color: var(--fg-1); }
-
-.range-row { display: flex; align-items: center; gap: var(--s-2); }
-.range-row__label { flex: 0 0 auto; }
-.range-row__out { flex: 0 0 auto; min-width: 34px; text-align: right; font-family: var(--font-meta); font-size: var(--text-micro); color: var(--fg-2); font-variant-numeric: tabular-nums; }
-.range { flex: 1; min-width: 0; height: 18px; appearance: none; background: transparent; }
-.range::-webkit-slider-runnable-track { height: 2px; background: var(--line-strong); }
-.range::-moz-range-track { height: 2px; background: var(--line-strong); }
-.range::-webkit-slider-thumb { appearance: none; width: 10px; height: 10px; margin-top: -4px; background: var(--amber); }
-.range::-moz-range-thumb { width: 10px; height: 10px; border: 0; background: var(--amber); }
-
-.check-row { display: flex; align-items: center; gap: var(--s-2); cursor: pointer; font-size: var(--text-xs); color: var(--fg-2); }
-.check { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.check-state { flex: 0 0 auto; width: 14px; height: 14px; display: grid; place-items: center; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .04); }
-.check:checked + .check-state { background: var(--amber); border-color: var(--amber); }
-.check:checked + .check-state::after { content: ''; width: 6px; height: 3px; border-left: 1.5px solid var(--c-primary-fg); border-bottom: 1.5px solid var(--c-primary-fg); transform: translateY(-1px) rotate(-45deg); }
-.check:focus-visible + .check-state { outline: 1px solid var(--c-ring); outline-offset: 1px; }
-
-.switch { position: relative; flex: 0 0 auto; width: 28px; height: 16px; border: 1px solid var(--line-strong); background: rgba(255, 255, 255, .04); transition: background var(--dur-1) ease, border-color var(--dur-1) ease; }
-.switch__knob { position: absolute; top: 1px; left: 1px; width: 12px; height: 12px; background: var(--fg-3); transition: transform var(--dur-1) var(--ease-snappy), background var(--dur-1) ease; }
-.switch[aria-checked='true'] { border-color: var(--amber-line); background: var(--amber-fill); }
-.switch[aria-checked='true'] .switch__knob { transform: translateX(12px); background: var(--amber); }
+.input:focus { border-color: var(--amber-line); background: rgba(255, 255, 255, .06); }
 
 /* ---------------------------------------------------------------- status */
 .pill {
@@ -1090,31 +1015,10 @@ button:disabled { cursor: default; opacity: .28; }
 .pill--idle { color: var(--fg-4); }
 
 .dot { flex: 0 0 auto; width: 6px; height: 6px; background: var(--fg-4); }
-.dot--ok { background: var(--ok); }
 .dot--active { background: var(--amber); box-shadow: var(--amber-glow); animation: dot-pulse 1.8s ease-in-out infinite; }
 .dot--danger { background: var(--danger); }
 .dot--idle { background: var(--fg-5); }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 6px;
-  border: 1px solid var(--line);
-  background: rgba(0, 0, 0, .45);
-  font-family: var(--font-meta);
-  font-size: var(--text-micro);
-  line-height: var(--leading-micro);
-  letter-spacing: var(--track-meta);
-  text-transform: uppercase;
-  color: var(--fg-3);
-  white-space: nowrap;
-}
-.badge--ok { border-color: var(--ok-line); color: var(--ok); }
-.badge--warn { border-color: var(--warn-line); color: var(--warn); }
-.badge--danger { border-color: var(--danger-line); color: var(--danger); }
-.badge--live { border-color: var(--amber-line); color: var(--amber); }
 
 /* --------------------------------------------------------------- content */
 /* The instrument face. Uppercase micro labels and counters only — never
@@ -1129,7 +1033,6 @@ button:disabled { cursor: default; opacity: .28; }
   color: var(--fg-4);
 }
 .eyebrow { font-weight: 700; letter-spacing: var(--track-meta-wide); color: var(--amber); }
-.num { font-family: var(--font-display); font-variant-numeric: tabular-nums; font-feature-settings: 'tnum'; }
 .kbd {
   display: inline-grid;
   place-items: center;
@@ -1143,8 +1046,6 @@ button:disabled { cursor: default; opacity: .28; }
   line-height: 1;
   color: var(--fg-2);
 }
-.divider { width: 1px; height: 18px; background: var(--line); }
-.rule { height: 1px; background: var(--line); }
 .scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .truncate { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
@@ -1236,17 +1137,6 @@ button:disabled { cursor: default; opacity: .28; }
 .empty__title { font-family: var(--font-display); font-size: var(--text-sm); line-height: var(--leading-sm); font-weight: 600; color: var(--fg-2); }
 .empty__text { font-size: var(--text-xs); line-height: var(--leading-xs); color: var(--fg-4); }
 
-.skeleton { position: relative; overflow: hidden; background: rgba(255, 255, 255, .045); }
-.skeleton::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .07), transparent);
-  transform: translateX(-100%);
-  animation: shimmer 1.5s ease-in-out infinite;
-}
-@keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(400%); } }
-
 /* One toast surface for EVA alerts and operation failures alike. */
 .toast {
   position: relative;
@@ -1291,8 +1181,6 @@ button:disabled { cursor: default; opacity: .28; }
 .hud-slot--tl { top: calc(var(--topbar-h) + var(--s-4)); left: calc(var(--rail-w) + var(--s-4)); align-items: flex-start; }
 .hud-slot--tr { top: calc(var(--topbar-h) + var(--s-4)); right: var(--s-4); align-items: flex-end; }
 .hud-slot--bl { bottom: calc(var(--dock-min-h) + var(--s-4)); left: calc(var(--rail-w) + var(--s-4)); align-items: flex-start; }
-.hud-slot--br { bottom: calc(var(--dock-min-h) + var(--s-4)); right: var(--s-4); align-items: flex-end; }
-.hud-slot--bc { bottom: calc(var(--dock-min-h) + var(--s-4)); left: 50%; transform: translateX(-50%); align-items: center; }
 
 .hud {
   display: flex;
@@ -1331,64 +1219,8 @@ button:disabled { cursor: default; opacity: .28; }
   color: var(--fg-4);
 }
 
-.grid-2x2 { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 1px; flex: 1 1 auto; min-height: 0; background: var(--line-soft); }
-.grid-2x2.is-focused { grid-template-columns: 1fr; grid-template-rows: 1fr; }
-.grid-2x2 > .cell.is-hidden { display: none; }
-.cell { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--c-background); }
-.cell__head { display: flex; align-items: center; gap: var(--s-2); padding: 6px var(--s-2); border-bottom: 1px solid var(--line); }
-.cell__id {
-  font-family: var(--font-meta);
-  font-size: var(--text-meta);
-  line-height: var(--leading-meta);
-  letter-spacing: var(--track-meta-wider);
-  text-transform: uppercase;
-  color: var(--fg-1);
-}
-.cell__status {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  font-family: var(--font-meta);
-  font-size: var(--text-micro);
-  letter-spacing: var(--track-meta);
-  text-transform: uppercase;
-  color: var(--fg-4);
-}
-.cell__body { display: grid; grid-template-columns: 1fr 1px 1fr; flex: 1 1 auto; min-height: 0; }
-
-.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--c-surface-deep); }
-.pane__frame { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; display: grid; place-items: center; container-type: size; }
-.pane__frame > img, .pane__frame > canvas, .pane__frame > div:not(.pane__fit) { display: block; width: 100%; height: 100%; object-fit: cover; }
-/* The projection-matched box: both panes letterbox to the SAME aspect so
- * the real feed and the twin render can be compared pixel for pixel. */
-.pane__fit { position: relative; width: min(100cqw, 100cqh * var(--pane-ar, 1.3333)); height: min(100cqh, 100cqw / var(--pane-ar, 1.3333)); overflow: hidden; background: var(--c-background); }
-.pane__fit > img, .pane__fit > canvas, .pane__fit > div { display: block; width: 100%; height: 100%; }
+/* The absolute slot a pane hangs its framing/degradation notice in. */
 .pane__note { position: absolute; left: var(--s-2); right: var(--s-2); bottom: var(--s-2); z-index: 1; }
-.pane__label {
-  padding: 4px var(--s-2);
-  border-top: 1px solid var(--line-soft);
-  font-family: var(--font-meta);
-  font-size: var(--text-micro);
-  letter-spacing: var(--track-meta-wider);
-  text-transform: uppercase;
-  color: var(--fg-4);
-}
-.pane-divider { position: relative; background: var(--line); }
-.pane-divider__tag {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  writing-mode: vertical-rl;
-  padding: var(--s-2) 2px;
-  background: var(--c-background);
-  font-family: var(--font-meta);
-  font-size: var(--text-micro);
-  letter-spacing: var(--track-meta-wider);
-  text-transform: uppercase;
-  color: var(--fg-5);
-}
 
 /* Truthful provenance. LIVE only when the server says the feed is live;
  * anything else is RECORDED, and a failed feed says so instead of
@@ -1411,6 +1243,9 @@ button:disabled { cursor: default; opacity: .28; }
 .feed-badge--live { border-color: var(--amber-line); color: var(--amber); }
 .feed-badge--recorded { color: var(--fg-3); }
 .feed-badge--twin { color: var(--fg-2); }
+/* A dropped channel: the badge itself carries the failure, because the pane
+ * behind it is deliberately empty rather than showing a stale frame. */
+.feed-badge--danger { border-color: var(--danger-line); color: var(--danger); }
 
 .notice {
   display: flex;
@@ -1431,7 +1266,7 @@ button:disabled { cursor: default; opacity: .28; }
 .notice--degraded { border-color: var(--warn-line); color: var(--warn); }
 
 /* Icons never grow with their label. */
-.badge svg, .pill svg, .notice svg, .hud__label svg, .dock__label svg,
+.pill svg, .notice svg, .hud__label svg, .dock__label svg,
 .feed-badge svg, .toast__title svg, .action svg, .btn svg, .seg__item svg { flex: 0 0 auto; width: 14px; height: 14px; }
 .btn--sm svg, .icon-btn--sm svg { width: 12px; height: 12px; }
 

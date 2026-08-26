@@ -8,15 +8,16 @@ import './canvas.css';
  * (zero-order hold) and applies it on the next 20 Hz tick, so the client must
  * keep restating the current key state. 50 ms matches that tick. */
 const CONTROL_INTERVAL_MS = 50;
-/** The keys this view claims. A membership table, not a list: every lookup is
- * `DRIVE_KEYS[key]` on a keydown, never a scan. */
+/** The keys this view claims. A membership table, not a list: the lookup runs
+ * on every keydown the window sees, including ones meant for other surfaces. */
 const DRIVE_KEYS: Record<string, true> = {
   w: true, a: true, s: true, d: true,
   arrowup: true, arrowdown: true, arrowleft: true, arrowright: true,
 };
 
-/** Which physical keys light up for a logical control. */
-const KEY_HINTS: readonly { readonly cap: string; readonly aliases: readonly string[] }[] = [
+/** Which physical keys light a cap up, so the hint reflects what the server is
+ * actually being sent rather than a static legend. */
+const KEY_CAPS: readonly { readonly cap: string; readonly aliases: readonly string[] }[] = [
   { cap: 'W', aliases: ['w', 'arrowup'] },
   { cap: 'A', aliases: ['a', 'arrowleft'] },
   { cap: 'S', aliases: ['s', 'arrowdown'] },
@@ -47,9 +48,9 @@ export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
       const key = event.key.toLowerCase();
       if (!DRIVE_KEYS[key]) return;
       keys.current.add(key);
-      // A new Set each event: the key caps re-render on press and release
-      // without this effect ever depending on the rendered state, which is
-      // what keeps the keyup listener attached for the life of the session.
+      // A fresh Set per event so the caps re-render on press and release. This
+      // effect never depends on that state, which is what keeps the keyup
+      // listener attached for the whole session.
       setHeld(new Set(keys.current));
       event.preventDefault();
     };
@@ -81,79 +82,84 @@ export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
 
   const latest = frames.at(-1);
   const fixtureEgoId = latest?.actors.find((actor) => actor.id.includes('ego'))?.id ?? latest?.actors[0]?.id ?? null;
-  const state = active ? 'active' : fixtureMode ? 'fixture' : 'ready';
 
-  return <div className="cv-view cv-drive" data-drive-state={state}>
+  return <div className="canvas-fill" data-drive-active={String(active)}>
     <TwinScene
-      className="cv-stage"
+      className="canvas__stage"
       frames={frames}
       followActorId={drive.egoActorId ?? fixtureEgoId}
       cameraMode={cameraMode}
       onFraming={(report) => setFraming(report.state)}
     />
 
-    <div className="cv-overlay">
-      <div className="cv-slot cv-slot--tl">
-        <section className={active ? 'cv-card cv-card--accent' : 'cv-card'} aria-label="Ego telemetry">
-          <div className="cv-card__head">
-            <p className={active ? 'cv-eyebrow cv-eyebrow--on' : 'cv-eyebrow'}>Drive · Manual control</p>
+    <div className="hud-layer">
+      <div className="hud-slot hud-slot--tl">
+        <section className={active ? 'card card--amber' : 'card'} aria-label="Ego telemetry">
+          <div className="hud__row">
+            <p className={active ? 'eyebrow' : 'meta'}>Drive · manual control</p>
             <span
-              className={active ? 'cv-pill cv-pill--on' : 'cv-pill'}
+              className={active ? 'pill pill--active' : 'pill pill--idle'}
               data-testid="drive-status"
+              style={{ marginLeft: 'auto' }}
             >
-              <i className={active ? 'cv-dot cv-dot--on' : 'cv-dot cv-dot--off'} />
+              <i className={active ? 'dot dot--active' : 'dot dot--idle'} />
               {active ? 'Active' : fixtureMode ? 'Fixture' : 'Ready'}
             </span>
           </div>
 
-          {/* With no session there is no vehicle, and the last telemetry tick is
-            * stale: report no reading rather than a number that means nothing.
-            * The value arrives from the server already in km/h. */}
-          <div className={active ? 'cv-readout' : 'cv-readout is-idle'}>
-            <span className="cv-readout__value" data-testid="drive-speed">{active ? Math.round(telemetry.speed) : '––'}</span>
-            <span className="cv-readout__unit">km/h</span>
+          {/* With no session there is no vehicle and the last telemetry tick is
+            * stale, so report no reading rather than a number that means
+            * nothing. The value arrives from the server already in km/h. */}
+          <div className={active ? 'hud-readout hud-readout--xl' : 'hud-readout hud-readout--xl is-idle'}>
+            <strong data-testid="drive-speed">{active ? Math.round(telemetry.speed) : '––'}</strong>
+            <span className="hud-readout__unit">km/h</span>
           </div>
 
           <dl className="cv-facts">
             <div>
-              <dt>Gear</dt>
+              <dt className="meta">Gear</dt>
               <dd data-testid="drive-gear">{active ? telemetry.gear : '––'}</dd>
             </div>
             <div>
-              <dt>Ego</dt>
+              <dt className="meta">Ego</dt>
               <dd title={drive.egoActorId ?? undefined}>{drive.egoActorId ?? 'unbound'}</dd>
             </div>
           </dl>
 
-          <button
-            className={active ? 'cv-action cv-action--danger cv-action--block' : 'cv-action cv-action--primary cv-action--block'}
-            data-testid="drive-session"
-            onClick={() => {
-              if (fixtureMode) setFixtureActive(!fixtureActive);
-              else if (drive.active) drive.endSession();
-              else drive.startSession();
-            }}
-          >{active ? 'End session' : 'Start drive session'}</button>
+          <div className="card__foot">
+            <button
+              className={active ? 'btn btn--danger' : 'btn btn--primary'}
+              data-testid="drive-session"
+              onClick={() => {
+                if (fixtureMode) setFixtureActive(!fixtureActive);
+                else if (drive.active) drive.endSession();
+                else drive.startSession();
+              }}
+            >{active ? 'End session' : 'Start drive session'}</button>
+          </div>
         </section>
 
-        {framing === 'no-coverage' && <aside className="cv-card cv-card--warn" role="status" data-testid="drive-coverage">
-          <p className="cv-eyebrow cv-eyebrow--warn">Coverage</p>
-          <h2 className="cv-title">Ego outside mapped tile coverage</h2>
-          <p className="cv-copy">
+        {framing === 'no-coverage' && <aside className="card" role="status" data-testid="drive-coverage">
+          <p className="eyebrow">Coverage</p>
+          <h2 className="card__title">Ego outside mapped tile coverage</h2>
+          <p className="card__body">
             The road network extends past the streamed 3D tiles, so the twin has no geometry to draw
             at this position. Telemetry is still live.
           </p>
-          <p className="cv-note">Steer back onto the mapped area and the scene returns on its own.</p>
+          <p className="hint">
+            <i className="hint__dot" />
+            Steer back onto the mapped area and the scene returns on its own
+          </p>
         </aside>}
       </div>
 
-      <div className="cv-slot cv-slot--tr">
-        <div className="cv-card cv-card--tight" aria-label="Drive camera">
-          <p className="cv-eyebrow">Camera</p>
-          <div className="cv-seg" role="radiogroup" aria-label="Drive camera framing" style={{ marginTop: 8 }}>
+      <div className="hud-slot hud-slot--tr">
+        <div className="hud hud--stack" aria-label="Drive camera">
+          <span className="hud__label">Camera</span>
+          <div className="seg" role="radiogroup" aria-label="Drive camera framing">
             {(['chase', 'first-person'] as const).map((option) => <button
               key={option}
-              className="cv-seg__item"
+              className="seg__item"
               role="radio"
               aria-checked={cameraMode === option}
               onClick={() => setCameraMode(option)}
@@ -162,19 +168,19 @@ export function DriveView({ frames, drive, fixtureMode }: DriveViewProps) {
         </div>
       </div>
 
-      <div className="cv-slot cv-slot--bl">
-        <div className="cv-card cv-card--tight" aria-label="Drive controls">
-          <p className="cv-eyebrow">Controls</p>
-          <div className="cv-keys" style={{ marginTop: 8 }}>
-            {KEY_HINTS.map(({ cap, aliases }) => <kbd
+      <div className="hud-slot hud-slot--bl">
+        <div className="hud hud--stack" aria-label="Drive controls">
+          <span className="hud__label">Controls</span>
+          <div className="hud__row">
+            {KEY_CAPS.map(({ cap, aliases }) => <kbd
               key={cap}
-              className={aliases.some((alias) => held.has(alias)) ? 'cv-key is-held' : 'cv-key'}
+              className={aliases.some((alias) => held.has(alias)) ? 'kbd is-held' : 'kbd'}
             >{cap}</kbd>)}
-            <span className="cv-note" style={{ margin: '0 0 0 4px' }}>or arrow keys</span>
+            <span className="meta">or arrow keys</span>
           </div>
-          <p className="cv-note" style={{ marginTop: 8 }}>
+          <span className="meta">
             {active ? 'W throttle · S brake · A/D steer' : 'Start a session to take control'}
-          </p>
+          </span>
         </div>
       </div>
     </div>

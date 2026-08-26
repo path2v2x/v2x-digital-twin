@@ -22,9 +22,9 @@ const FRAMING_NOTICE: Record<SceneFraming['state'], string | null> = {
   error: 'Map tiles failed to load',
 };
 
-/** Corner-bracket glyph: outward brackets expand a channel, inward arrows
- * collapse the focused one back to the four-up. */
-const EXPAND_PATHS: Record<'expand' | 'collapse', readonly string[]> = {
+/** Corner-bracket glyph: outward brackets expand a channel to the full canvas,
+ * inward arrows collapse the focused one back to the four-up. */
+const FOCUS_GLYPH: Record<'expand' | 'collapse', readonly string[]> = {
   expand: ['M6 2.5H2.5V6', 'M10 2.5h3.5V6', 'M6 13.5H2.5V10', 'M10 13.5h3.5V10'],
   collapse: ['M9.5 2.5h4v4', 'M13.5 2.5 9 7', 'M6.5 13.5h-4v-4', 'M2.5 13.5 7 9'],
 };
@@ -42,21 +42,22 @@ export function CameraCompareView({ frames, cameras }: CameraCompareViewProps) {
   }, [focused]);
 
   if (!cameras.length) {
-    return <div className="cv-view cv-cams">
-      <div className="cv-empty">
-        <p className="cv-eyebrow">Channels</p>
-        <h2 className="cv-title">No calibrated channels</h2>
-        <p className="cv-copy">
-          The twin socket has not reported a camera rig yet. Comparison resumes as soon as
-          twin_cameras arrives.
-        </p>
+    return <div className="canvas-fill">
+      <div className="cv-centre">
+        <div className="empty">
+          <p className="empty__title">No calibrated channels</p>
+          <p className="empty__text">
+            The twin socket has not reported a camera rig yet. Comparison resumes as soon as
+            twin_cameras arrives.
+          </p>
+        </div>
       </div>
     </div>;
   }
 
-  return <div className="cv-view cv-cams">
+  return <div className="canvas-fill">
     <div
-      className="cv-cams__grid"
+      className="cv-grid"
       data-focused={focused ? 'true' : 'false'}
       aria-label="Real site cameras beside projection-matched twin renders"
     >
@@ -83,22 +84,22 @@ export function CameraCompareView({ frames, cameras }: CameraCompareViewProps) {
         >
           <div className="cv-chan__head">
             <span className="cv-chan__id">{camera.id.toUpperCase()}</span>
-            <span className="cv-prov" style={{ border: 0, padding: 0 }}>
+            <span className="cv-prov">
               <span>{camera.intrinsics.width}&times;{camera.intrinsics.height}</span>
               <span>yaw <b>{pose.yawDeg.toFixed(1)}&deg;</b></span>
               <span>pitch <b>{pose.pitchDeg.toFixed(1)}&deg;</b></span>
             </span>
-            <span className={feed.failed ? 'cv-pill cv-pill--down' : live ? 'cv-pill cv-pill--on' : 'cv-pill'}>
-              <i className={feed.failed ? 'cv-dot cv-dot--down' : live ? 'cv-dot cv-dot--on' : 'cv-dot cv-dot--off'} />
+            <span className={feed.failed ? 'pill pill--danger' : live ? 'pill pill--active' : 'pill pill--idle'}>
+              <i className={feed.failed ? 'dot dot--danger' : live ? 'dot dot--active' : 'dot dot--idle'} />
               {feed.failed ? 'Signal lost' : live ? 'Site feed live' : 'Recorded loop'}
             </span>
             <button
-              className="cv-iconbtn"
-              aria-label={isFocused ? `Show all channels` : `Expand ${camera.id.toUpperCase()}`}
+              className="icon-btn icon-btn--sm"
+              aria-label={isFocused ? 'Show all channels' : `Expand ${camera.id.toUpperCase()}`}
               aria-pressed={isFocused}
               onClick={() => setFocused(isFocused ? null : camera.id)}
             ><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-              {EXPAND_PATHS[isFocused ? 'collapse' : 'expand'].map((d) => <path key={d} d={d} />)}
+              {FOCUS_GLYPH[isFocused ? 'collapse' : 'expand'].map((d) => <path key={d} d={d} />)}
             </svg></button>
           </div>
 
@@ -112,21 +113,21 @@ export function CameraCompareView({ frames, cameras }: CameraCompareViewProps) {
               {/* The badge states only what the server reported: live is live,
                 * anything else is a recorded loop, and a dropped channel shows
                 * no frame at all. */}
-              <span className={feed.failed ? 'cv-badge cv-badge--down' : live ? 'cv-badge cv-badge--live' : 'cv-badge cv-badge--recorded'}>
-                <i className={feed.failed ? 'cv-dot cv-dot--down' : live ? 'cv-dot cv-dot--on' : 'cv-dot cv-dot--off'} />
+              <span className={feed.failed ? 'feed-badge feed-badge--danger' : live ? 'feed-badge feed-badge--live' : 'feed-badge feed-badge--recorded'}>
+                <i className={feed.failed ? 'dot dot--danger' : live ? 'dot dot--active' : 'dot dot--idle'} />
                 {feed.failed ? 'Feed unavailable' : live ? 'Real · Live' : 'Recorded · Loop'}
               </span>
               {feed.failed && <div className="cv-fail" role="status">
-                <p className="cv-eyebrow cv-eyebrow--warn">MJPEG channel dropped</p>
-                <h3 className="cv-title" style={{ margin: 0, fontSize: 14 }}>Feed unavailable</h3>
+                <p className="meta">MJPEG channel dropped</p>
+                <p className="empty__title">Feed unavailable</p>
                 <button
-                  className="cv-action cv-action--sm"
+                  className="btn btn--sm"
                   onClick={() => setFeeds((current) => ({ ...current, [camera.id]: { generation: feed.generation + 1, failed: false } }))}
                 >Reconnect</button>
               </div>}
             </div>
 
-            <div className="cv-seam"><span>Real &rarr; Twin</span></div>
+            <div className="cv-seam"><span className="meta">Real &rarr; Twin</span></div>
 
             <div className="cv-pane">
               <TwinScene
@@ -135,13 +136,8 @@ export function CameraCompareView({ frames, cameras }: CameraCompareViewProps) {
                 camera={camera}
                 onFraming={(report) => setFraming((current) => ({ ...current, [camera.id]: report }))}
               />
-              <span className="cv-badge cv-badge--twin">Twin · Truth</span>
-              {notice && <div className="cv-pane__note">
-                <p className="cv-hint cv-hint--warn">
-                  <i className="cv-dot cv-dot--warn" />
-                  {notice}
-                </p>
-              </div>}
+              <span className="feed-badge feed-badge--twin">Twin &middot; Truth</span>
+              {notice && <aside className="pane__note"><p className="notice notice--degraded">{notice}</p></aside>}
             </div>
           </div>
 
