@@ -5,7 +5,7 @@ import { decodeTruthFrame, type TruthFrame, TruthFrameStream } from '../lib/trut
 /** The three canvas compositions of the single editor surface. */
 export type CanvasMode = 'scene' | 'drive' | 'cameras';
 
-export interface Alert { id: string; title: string; message: string }
+export interface Alert { id: string; title: string; message: string; kind?: 'warn' | 'danger' }
 
 export interface Zone {
   id: string;
@@ -93,6 +93,9 @@ export interface DriveSocket {
   sendOp(message: object): void;
   startSession(): void;
   endSession(): void;
+  /** Operation outcomes worth showing the operator (rejections, partial spawns). */
+  notices: readonly Alert[];
+  dismissNotice(id: string): void;
 }
 
 /** One shared /drive socket for the whole app. Server semantics are session-scoped
@@ -103,6 +106,10 @@ export function useDriveSocket(fixtureMode: boolean): DriveSocket {
   const [active, setActive] = useState(false);
   const [egoActorId, setEgoActorId] = useState<string | null>(null);
   const [telemetry, setTelemetry] = useState({ speed: 0, gear: 0 });
+  const [notices, setNotices] = useState<Alert[]>([]);
+  const notify = useCallback((title: string, message: string, kind: Alert['kind'] = 'danger') => {
+    setNotices((current) => [...current.slice(-3), { id: crypto.randomUUID(), title, message, kind }]);
+  }, []);
   const pendingRef = useRef<object[]>([]);
   const startedRef = useRef(false);
   const activeRef = useRef(false);
@@ -125,11 +132,23 @@ export function useDriveSocket(fixtureMode: boolean): DriveSocket {
       }
       if (message.type === 'respawned' || message.type === 'teleported') setEgoActorId(String(message.vehicle_id));
       if (message.type === 'session_ended') { activeRef.current = false; startedRef.current = false; setActive(false); setEgoActorId(null); }
-      if (message.type === 'error') console.warn('[drive]', message.message);
+      // Operations must never fail silently: the editor surfaces every rejection
+      // and partial spawn as a notice instead of dropping it into the console.
+      if (message.type === 'error') notify('Operation rejected', String(message.message ?? 'The server rejected the request'));
+      if (message.type === 'scenario_loaded' && Number(message.failed ?? 0) > 0) {
+        const failures = Array.isArray(message.failures) ? message.failures as Array<{ role?: string; reason?: string }> : [];
+        const detail = failures.map((f) => `${f.role ?? 'actor'}: ${f.reason ?? 'spawn failed'}`).join('; ');
+        notify(
+          Number(message.spawned ?? 0) > 0 ? 'Scenario partially placed' : 'Scenario not placed',
+          detail || `${message.failed} actor(s) could not spawn`,
+          Number(message.spawned ?? 0) > 0 ? 'warn' : 'danger',
+        );
+      }
+      if (message.type === 'undo_empty') notify('Nothing to undo', String(message.message ?? 'No placed objects'), 'warn');
     };
     socket.onclose = () => { activeRef.current = false; startedRef.current = false; setActive(false); setEgoActorId(null); };
     return () => socket.close();
-  }, [fixtureMode]);
+  }, [fixtureMode, notify]);
 
   const startSession = useCallback(() => {
     if (startedRef.current) return;
@@ -146,6 +165,7 @@ export function useDriveSocket(fixtureMode: boolean): DriveSocket {
   }, [transmit, startSession]);
 
   const endSession = useCallback(() => transmit({ type: 'end_session' }), [transmit]);
+  const dismissNotice = useCallback((id: string) => setNotices((current) => current.filter((n) => n.id !== id)), []);
 
-  return { active, egoActorId, telemetry, transmit, sendOp, startSession, endSession };
+  return { active, egoActorId, telemetry, transmit, sendOp, startSession, endSession, notices, dismissNotice };
 }

@@ -8,7 +8,7 @@ const VISIBLE = 4;
 export function Toasts({ alerts, onDismiss }: { alerts: readonly Alert[]; onDismiss(id: string): void }) {
   if (!alerts.length) return null;
   return <div className="toasts" role="log" aria-label="EVA alerts">
-    {alerts.slice(-VISIBLE).map((alert) => <article className="toast toast--warn" key={alert.id}>
+    {alerts.slice(-VISIBLE).map((alert) => <article className={`toast toast--${alert.kind ?? 'warn'}`} key={alert.id}>
       <div className="toast__title">
         <AlertIcon />
         {alert.title}

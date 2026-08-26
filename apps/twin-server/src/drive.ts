@@ -691,6 +691,7 @@ export class DriveSession {
         zones: result.zones,
         spawned: result.spawned.length,
         failed: result.failed,
+        failures: result.failures,
         placed_count: this.placedObjects.length,
       };
     }

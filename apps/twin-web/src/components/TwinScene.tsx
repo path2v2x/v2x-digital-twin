@@ -107,8 +107,15 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
         const previous = currentFrames[currentFrames.length - 2] ?? next;
         const presentationTime = previous.timeSec + Math.min(next.timeSec - previous.timeSec, performance.now() % 50 / 1000);
         const actors = interpolateFrames(previous, next, presentationTime);
+        // The engine's truth is planar: every actor arrives at y = 0. Richmond's
+        // terrain is not flat (bundle scene bounds span y -24..37), so an actor
+        // placed at its literal y is buried under the road wherever the ground
+        // rises — which also put the chase camera under the surface and rendered
+        // a white void. Lift each actor onto the sampled ground at its own XZ.
+        const groundAt = (x: number, z: number): number => viewer.sampleGroundHeight(x, z) ?? 0;
         const views: ActorView[] = actors.map((actor) => ({
-          id: actor.id, catalogId: CATALOG_BY_CLASS[actor.class], x: actor.position[0], y: actor.position[1], z: actor.position[2],
+          id: actor.id, catalogId: CATALOG_BY_CLASS[actor.class],
+          x: actor.position[0], y: actor.position[1] + groundAt(actor.position[0], actor.position[2]), z: actor.position[2],
           headingRad: actor.yawRad, dims: actor.dims, bodyColor: actor.ghost ? '#24e6ff' : undefined,
           speedMps: Math.hypot(...actor.velocity), animationTimeS: presentationTime,
         }));
@@ -137,12 +144,15 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
           const delta = Math.min(.25, (now - lastFollowMs) / 1000);
           lastFollowMs = now;
           const alpha = 1 - Math.exp(-(firstPerson ? 14 : 7) * delta);
+          const followGroundY = followed.position[1] + groundAt(followed.position[0], followed.position[2]);
           viewer.camera.position.lerp({
             x: followed.position[0] + forwardX * offset,
-            y: followed.position[1] + height,
+            y: followGroundY + height,
             z: followed.position[2] + forwardZ * offset,
           }, alpha);
-          viewer.controls.target.set(followed.position[0] + forwardX * 8, followed.position[1] + 1, followed.position[2] + forwardZ * 8);
+          const targetX = followed.position[0] + forwardX * 8;
+          const targetZ = followed.position[2] + forwardZ * 8;
+          viewer.controls.target.set(targetX, groundAt(targetX, targetZ) + 1, targetZ);
           viewer.camera.lookAt(viewer.controls.target);
 
           // The road network reaches past the streamed 3D tiles, so an ego can
@@ -172,6 +182,7 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
     options={{ antialias: true, maxPixelRatio: 1, cinematicLighting: true, byteBudget: camera ? 96_000_000 : 256_000_000 }}
     onReady={(viewer) => {
       viewerRef.current = viewer;
+      if (import.meta.env.DEV) (window as unknown as { __twinViewer?: unknown }).__twinViewer = viewer;
       const renderer = new ActorRenderer();
       renderer.group.name = 'v2x-truth-actors';
       viewer.scene.add(renderer.group);

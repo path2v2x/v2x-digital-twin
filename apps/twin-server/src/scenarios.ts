@@ -102,10 +102,10 @@ export class ScenarioStore {
    * ids (session-owned). The firetruck role keeps its EVA identity via the
    * vehicle.carlamotors.firetruck blueprint mapping.
    */
-  instantiateTemplate(file: string, ownerSession: string): { spawned: string[]; failed: number; name: string; zones: unknown[] } {
+  instantiateTemplate(file: string, ownerSession: string): { spawned: string[]; failed: number; failures: Array<{ role: string; reason: string }>; name: string; zones: unknown[] } {
     const template = JSON.parse(readFileSync(path.join(this.templatesDir, path.basename(file)), 'utf8')) as ScenarioTemplate;
     const spawned: string[] = [];
-    let failed = 0;
+    const failures: Array<{ role: string; reason: string }> = [];
     for (const role of template.roles ?? []) {
       if (role.id === 'ego_vehicle') continue; // externally controlled by the drive session
       const cls = role.actor?.class ?? 'car';
@@ -114,7 +114,7 @@ export class ScenarioStore {
       const blueprint = catalogId === 'vehicle.fire_engine' ? 'vehicle.carlamotors.firetruck' : `template.${cls}`;
       const position = role.pose?.position;
       if (!position || position.x === undefined || position.z === undefined) {
-        failed += 1;
+        failures.push({ role: role.label ?? role.id, reason: 'template role has no pose position' });
         continue;
       }
       const speedMps = (role.initialSpeedKph ?? 0) / 3.6;
@@ -139,9 +139,9 @@ export class ScenarioStore {
         meta: { name: role.label ?? role.id, ownerSession },
       });
       if (result.ok) spawned.push(result.id);
-      else failed += 1;
+      else failures.push({ role: role.label ?? role.id, reason: result.error });
     }
-    return { spawned, failed, name: template.meta?.name ?? file, zones: [] };
+    return { spawned, failed: failures.length, failures, name: template.meta?.name ?? file, zones: [] };
   }
 
   isTemplate(file: string): boolean {

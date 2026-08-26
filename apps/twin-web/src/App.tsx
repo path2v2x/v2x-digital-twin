@@ -37,7 +37,8 @@ export default function App() {
   const actors = frame?.actors ?? [];
   const selectedActor = actors.find((actor) => actor.id === selectedId) ?? null;
   const selectedPose = frame?.scene.actors.find((actor) => actor.id === selectedId) ?? null;
-  const alerts = twin.alerts.filter((alert) => !acknowledged.includes(alert.id));
+  // EVA alerts (from /twin) and operation notices (from /drive) share one surface.
+  const alerts = [...twin.alerts, ...drive.notices].filter((alert) => !acknowledged.includes(alert.id));
 
   const changeMode = useCallback((next: CanvasMode) => {
     setMode(next);
@@ -128,7 +129,7 @@ export default function App() {
           onLive={() => { twin.setMode('live'); twin.send({ type: 'twin_live' }); }}
           onSeek={seek}
         />
-        <Toasts alerts={alerts} onDismiss={(id) => setAcknowledged((current) => [...current, id])} />
+        <Toasts alerts={alerts} onDismiss={(id) => { setAcknowledged((current) => [...current, id]); drive.dismissNotice(id); }} />
       </div>
 
       {(mode === 'scene' || selectedActor) && <Inspector
