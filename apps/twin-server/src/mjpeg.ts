@@ -14,6 +14,7 @@
 import { spawn, execFile, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
+import { WebSocket } from 'ws';
 
 export const CHANNELS = ['ch1', 'ch2', 'ch3', 'ch4'] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -31,6 +32,89 @@ const EOI = Buffer.from([0xff, 0xd9]);
 
 export type FeedMode = 'live' | 'replay' | 'starting';
 
+const CAMERA_FEED_MAGIC = Buffer.from('SFCF');
+const CAMERA_FEED_VERSION = 1;
+const CAMERA_FEED_HEADER_BYTES = 8;
+const WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
+
+const MODE_CODE: Record<FeedMode, number> = {
+  starting: 0,
+  live: 1,
+  replay: 2,
+};
+
+interface MultiplexSocket {
+  readonly readyState: number;
+  readonly bufferedAmount: number;
+  send(data: Buffer | string, options?: { binary?: boolean }): void;
+  on(event: 'close', listener: () => void): unknown;
+}
+
+interface MultiplexFrame {
+  readonly channel: Channel;
+  readonly mode: FeedMode;
+  readonly jpeg: Buffer | null;
+  readonly revision: number;
+}
+
+/** Binary wire: "SFCF", version u8, channel 1..4 u8, mode u8, reserved u8, JPEG. */
+export function encodeCameraFeedFrame(channel: Channel, mode: FeedMode, jpeg: Buffer): Buffer {
+  const frame = Buffer.allocUnsafe(CAMERA_FEED_HEADER_BYTES + jpeg.length);
+  CAMERA_FEED_MAGIC.copy(frame, 0);
+  frame[4] = CAMERA_FEED_VERSION;
+  frame[5] = CHANNELS.indexOf(channel) + 1;
+  frame[6] = MODE_CODE[mode];
+  frame[7] = 0;
+  jpeg.copy(frame, CAMERA_FEED_HEADER_BYTES);
+  return frame;
+}
+
+/** Fans the newest frame per channel to each socket without queueing stale images. */
+export class CameraFeedMultiplexer {
+  private readonly clients = new Map<MultiplexSocket, {
+    modesJson: string;
+    revisions: Map<Channel, number>;
+  }>();
+
+  attach(socket: MultiplexSocket, modes: Readonly<Record<string, FeedMode>>): void {
+    const modesJson = stateMessage(modes);
+    this.clients.set(socket, { modesJson, revisions: new Map() });
+    if (socket.readyState === WebSocket.OPEN) socket.send(modesJson);
+    socket.on('close', () => this.clients.delete(socket));
+  }
+
+  push(frames: readonly MultiplexFrame[], modes: Readonly<Record<string, FeedMode>>): void {
+    const modesJson = stateMessage(modes);
+    const encoded = new Map<Channel, Buffer>();
+    for (const [socket, client] of this.clients) {
+      if (socket.readyState !== WebSocket.OPEN) {
+        this.clients.delete(socket);
+        continue;
+      }
+      if (socket.bufferedAmount > WS_BACKPRESSURE_BYTES) continue;
+      if (client.modesJson !== modesJson) {
+        socket.send(modesJson);
+        client.modesJson = modesJson;
+      }
+      for (const frame of frames) {
+        if (socket.bufferedAmount > WS_BACKPRESSURE_BYTES) break;
+        if (!frame.jpeg || client.revisions.get(frame.channel) === frame.revision) continue;
+        let bytes = encoded.get(frame.channel);
+        if (!bytes) {
+          bytes = encodeCameraFeedFrame(frame.channel, frame.mode, frame.jpeg);
+          encoded.set(frame.channel, bytes);
+        }
+        socket.send(bytes, { binary: true });
+        client.revisions.set(frame.channel, frame.revision);
+      }
+    }
+  }
+}
+
+function stateMessage(modes: Readonly<Record<string, FeedMode>>): string {
+  return JSON.stringify({ type: 'camera_feed_states', states: modes });
+}
+
 export interface LiveFeedConfig {
   readonly streamPrefix: string;
   readonly region: string;
@@ -41,8 +125,10 @@ interface ChannelState {
   process: ChildProcessByStdio<null, Readable, null> | null;
   buffer: Buffer;
   latest: Buffer | null;
+  revision: number;
   clients: Set<ServerResponse>;
   mode: FeedMode;
+  targetMode: Exclude<FeedMode, 'starting'> | null;
   liveRetryTimer: NodeJS.Timeout | null;
 }
 
@@ -54,6 +140,7 @@ export class MjpegService {
   private readonly fps: number;
   private readonly channels = new Map<Channel, ChannelState>();
   private pushTimer: NodeJS.Timeout | null = null;
+  private readonly multiplexer = new CameraFeedMultiplexer();
   private stopped = false;
 
   private readonly live: LiveFeedConfig | null;
@@ -74,7 +161,7 @@ export class MjpegService {
 
   start(): void {
     for (const channel of CHANNELS) {
-      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, clients: new Set(), mode: 'starting', liveRetryTimer: null };
+      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, revision: 0, clients: new Set(), mode: 'starting', targetMode: null, liveRetryTimer: null };
       this.channels.set(channel, state);
       void this.launch(channel, state);
     }
@@ -108,22 +195,27 @@ export class MjpegService {
       state.liveRetryTimer = null;
     }
     let args: string[];
+    let targetMode: Exclude<FeedMode, 'starting'>;
+    state.mode = 'starting';
+    state.targetMode = null;
+    state.latest = null;
     if (this.live) {
       try {
         const hlsUrl = await this.resolveHlsUrl(channel);
         args = ['-hide_banner', '-loglevel', 'error', '-i', hlsUrl, '-vf', 'scale=640:480', '-r', String(this.fps), '-q:v', '7', '-f', 'mjpeg', 'pipe:1'];
-        state.mode = 'live';
+        targetMode = 'live';
       } catch (error) {
         console.warn(`[mjpeg] ${channel}: live feed unavailable (${String(error).slice(0, 120)}); falling back to recorded loop`);
         this.endpointCache.delete(channel);
         args = this.replayArgs(channel);
-        state.mode = 'replay';
+        targetMode = 'replay';
         state.liveRetryTimer = setTimeout(() => state.process?.kill('SIGTERM'), LIVE_RETRY_MS);
       }
     } else {
       args = this.replayArgs(channel);
-      state.mode = 'replay';
+      targetMode = 'replay';
     }
+    state.targetMode = targetMode;
     if (this.stopped) return;
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'ignore'] });
     state.process = child;
@@ -142,12 +234,17 @@ export class MjpegService {
           break;
         }
         state.latest = state.buffer.subarray(start, end + 2);
+        state.revision += 1;
+        state.mode = state.targetMode ?? 'starting';
         state.buffer = state.buffer.subarray(end + 2);
       }
       // Bound memory if EOI never appears (corrupt stream).
       if (state.buffer.length > 8 * 1024 * 1024) state.buffer = Buffer.alloc(0);
     });
     child.on('exit', () => {
+      state.latest = null;
+      state.mode = 'starting';
+      state.targetMode = null;
       state.process = null;
       if (!this.stopped) setTimeout(() => void this.launch(channel, state), 2000);
     });
@@ -158,8 +255,10 @@ export class MjpegService {
   }
 
   private pushFrames(): void {
-    for (const state of this.channels.values()) {
+    const multiplexFrames: MultiplexFrame[] = [];
+    for (const [channel, state] of this.channels) {
       const frame = state.latest;
+      multiplexFrames.push({ channel, mode: state.mode, jpeg: frame, revision: state.revision });
       if (!frame) continue;
       for (const res of state.clients) {
         if (res.writableEnded || res.destroyed) {
@@ -171,6 +270,7 @@ export class MjpegService {
         res.write('\r\n');
       }
     }
+    this.multiplexer.push(multiplexFrames, this.modes());
   }
 
   /** Attach an HTTP response as a multipart client. Returns false if unknown. */
@@ -186,6 +286,11 @@ export class MjpegService {
     state.clients.add(res);
     res.on('close', () => state.clients.delete(res));
     return true;
+  }
+
+  /** Attach one WebSocket that receives every channel's newest JPEG. */
+  attachMultiplex(socket: MultiplexSocket): void {
+    this.multiplexer.attach(socket, this.modes());
   }
 
   stop(): void {

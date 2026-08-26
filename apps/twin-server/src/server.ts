@@ -34,6 +34,11 @@ export function startServers(deps: DriveDeps): TwinServers {
     const route = url.pathname;
     const host = (req.headers.host ?? `localhost:${config.wsPort}`).split(':')[0] ?? 'localhost';
 
+    if (route === '/camera-feeds') {
+      mjpeg.attachMultiplex(ws);
+      return;
+    }
+
     // Binary truth_frame relay: verbatim engine bytes for every path.
     const unsubscribe = world.subscribe((bytes) => {
       if (ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > WS_BACKPRESSURE_BYTES) return;
@@ -85,7 +90,7 @@ export function startServers(deps: DriveDeps): TwinServers {
   });
 
   wsHttp.listen(config.wsPort, () => {
-    console.log(`[twin-server] WS listening on :${config.wsPort} (/drive, /twin)`);
+    console.log(`[twin-server] WS listening on :${config.wsPort} (/drive, /twin, /camera-feeds)`);
   });
 
   /* ---------------------------------------------------------- HTTP :8090 */

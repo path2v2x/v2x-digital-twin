@@ -300,6 +300,50 @@ describe('/twin round-trips', () => {
   });
 });
 
+describe('WebSocket /camera-feeds', () => {
+  it('carries all four tagged JPEG channels over one connection', async () => {
+    const socket = new WebSocket(`ws://127.0.0.1:${config.wsPort}/camera-feeds`);
+    const channels = new Set<number>();
+    let states: Json | null = null;
+    const { promise, resolve, reject } = Promise.withResolvers<void>();
+    // Failure guard for a live ffmpeg integration; completion awaits four emitted channels.
+    const timeout = setTimeout(() => reject(new Error(`received channels ${[...channels].join(',')}`)), 5_000);
+    socket.on('message', (data, isBinary) => {
+      try {
+        if (!isBinary) {
+          const message = JSON.parse(data.toString()) as Json;
+          if (message['type'] === 'camera_feed_states') states = message['states'] as Json;
+          return;
+        }
+        const frame = data as Buffer;
+        expect(frame.subarray(0, 4).toString()).toBe('SFCF');
+        expect(frame[4]).toBe(1);
+        expect([0, 1, 2]).toContain(frame[6]);
+        expect([...frame.subarray(8, 10)]).toEqual([0xff, 0xd8]);
+        channels.add(frame[5]!);
+        if (channels.size === 4) resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+    socket.on('error', reject);
+
+    try {
+      await promise;
+      expect(states).toEqual({
+        ch1: expect.stringMatching(/^(live|replay|starting)$/),
+        ch2: expect.stringMatching(/^(live|replay|starting)$/),
+        ch3: expect.stringMatching(/^(live|replay|starting)$/),
+        ch4: expect.stringMatching(/^(live|replay|starting)$/),
+      });
+      expect([...channels].sort()).toEqual([1, 2, 3, 4]);
+    } finally {
+      clearTimeout(timeout);
+      socket.close();
+    }
+  });
+});
+
 describe('HTTP :8090', () => {
   it('serves multipart MJPEG with JPEG frames on all four channels', async () => {
     for (const channel of ['ch1', 'ch2', 'ch3', 'ch4']) {
