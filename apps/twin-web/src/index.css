@@ -62,7 +62,12 @@
   --surface-inset: #0c0c0d;       /* inset list plate */
   --surface-input: rgba(255, 255, 255, .04);
   --surface-hover: rgba(255, 255, 255, .05);
-  --surface-hud: rgba(5, 6, 7, .4); /* the one blur exception: over a scene */
+  /* The one blur exception: content over a moving scene. DESIGN specifies
+   * rgba(5,6,7,.4), which assumes a dark scene; this twin's daylight sky and
+   * sunlit MJPEG frames are near-white, where .4 drops meta labels below a
+   * usable contrast ratio. Same flat scrim, opacity raised to keep the text
+   * legible over bright imagery. */
+  --surface-hud: rgba(5, 6, 7, .72);
   --scrim: rgba(0, 0, 0, .8);
 
   /* --- foreground ramp: #ededed at fixed alphas, no new grays ---------- */
