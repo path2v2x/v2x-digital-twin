@@ -44,8 +44,16 @@ export default function App() {
     // Placement and drawing are 3D-authoring gestures: cancel them rather than
     // letting them hide behind the drive or camera canvas.
     setArmed(null);
-    zoneTool.cancel();
+    if (zoneTool.drawing) zoneTool.cancel();
     setTool((current) => (next === 'scene' || current === 'truth' ? current : null));
+  }, [zoneTool]);
+
+  /* Switching tools cancels whatever the previous tool armed, so nothing can
+   * stay pending behind a panel the user has moved on from. */
+  const changeTool = useCallback((next: ToolId | null) => {
+    setArmed(null);
+    if (next !== 'zones' && zoneTool.drawing) zoneTool.cancel();
+    setTool(next);
   }, [zoneTool]);
 
   useEffect(() => {
@@ -90,7 +98,7 @@ export default function App() {
       <ToolRail
         mode={mode}
         tool={tool}
-        onTool={setTool}
+        onTool={changeTool}
         actors={actors}
         selectedId={selectedId}
         onSelect={setSelectedId}
