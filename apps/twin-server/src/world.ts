@@ -32,6 +32,7 @@ import { WorldSession, type SpawnRequest, type TruthSubscription, type WorldActo
 import type { LegacyFlatEarthFrame } from '@simforge/maps';
 import { flatEarthFromXodr, sceneHeadingFromCarlaYawDeg, type SceneXZ } from './geo.js';
 import path from 'node:path';
+import { readFileSync } from 'node:fs';
 import type { TwinConfig } from './config.js';
 
 export type ActorCategory =
@@ -103,6 +104,9 @@ export class TwinWorld {
   private readonly tickHooks = new Set<(tS: number) => void>();
   private timer: NodeJS.Timeout | null = null;
   private spawnPoints: Array<{ x: number; z: number; headingRad: number }> = [];
+  /** Spawn points inside the streamed browser tile bundle (preferred for the ego). */
+  private coveredSpawnPoints: Array<{ x: number; z: number; headingRad: number }> = [];
+  private tileCoverage: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
 
   private constructor(bundle: MapBundle, frame: LegacyFlatEarthFrame, xodrSha256: string, session: WorldSession, dt: number) {
     this.bundle = bundle;
@@ -136,6 +140,7 @@ export class TwinWorld {
     });
     const session = new WorldSession({ input, graph: bundle.graph, horizonSeconds: config.horizonSeconds });
     const world = new TwinWorld(bundle, frame, world0Sha(bundle), session, config.tickDt);
+    world.tileCoverage = TwinWorld.readTileCoverage(config.mapBundleDir);
     world.buildSpawnPoints();
     // Move past t = 0 before any client can issue an act (rebuild determinism).
     session.advance(1);
@@ -155,12 +160,43 @@ export class TwinWorld {
       points.push({ x: sample.point.x, z: -sample.point.y, headingRad: -sample.headingRad });
     }
     this.spawnPoints = points;
+    // The XODR road network is larger than the streamed browser tile bundle, so an
+    // unfiltered pick can drop the ego on unmapped ground (a white void in the
+    // client). Prefer spawn points inside the tiles the viewer actually streams.
+    const covered = points.filter((p) => this.tileCoverage.some((b) => p.x >= b.minX && p.x <= b.maxX && p.z >= b.minZ && p.z <= b.maxZ));
+    this.coveredSpawnPoints = covered;
+  }
+
+  /** Union of streamed tile AABBs (XZ) from the bundle's own browser manifest. */
+  private static readTileCoverage(mapBundleDir: string): Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> {
+    try {
+      const manifest = JSON.parse(readFileSync(path.join(mapBundleDir, 'browser-manifest'), 'utf8')) as {
+        tiles?: Array<{ bounds?: { min?: number[]; max?: number[] } }>;
+      };
+      const boxes: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
+      for (const tile of manifest.tiles ?? []) {
+        const min = tile.bounds?.min;
+        const max = tile.bounds?.max;
+        if (!min || !max || min.length < 3 || max.length < 3) continue;
+        boxes.push({ minX: min[0]!, maxX: max[0]!, minZ: min[2]!, maxZ: max[2]! });
+      }
+      return boxes;
+    } catch {
+      return [];
+    }
+  }
+
+  /** Spawn-pool sizes: total road points vs those inside streamed tile coverage. */
+  spawnPointStats(): { total: number; covered: number } {
+    return { total: this.spawnPoints.length, covered: this.coveredSpawnPoints.length };
   }
 
   randomSpawnPoint(): { x: number; z: number; headingRad: number } {
-    if (this.spawnPoints.length === 0) throw new Error('No spawn points available');
-    return this.spawnPoints[Math.floor(Math.random() * this.spawnPoints.length)]!;
+    const pool = this.coveredSpawnPoints.length > 0 ? this.coveredSpawnPoints : this.spawnPoints;
+    if (pool.length === 0) throw new Error('No spawn points available');
+    return pool[Math.floor(Math.random() * pool.length)]!;
   }
+
 
   /* ------------------------------------------------------------- tick loop */
 
