@@ -3,6 +3,8 @@ import { extname, join, normalize } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
+// Local dev only: serves the map bundle (root containing `3d/manifest.json`) at /map.
+// In production nginx serves the same layout from /var/www/v2x-twin-map (see deploy/nginx-twin.conf).
 const MAP_BUNDLE = process.env.SIMFORGE_MAP_BUNDLE ?? '/home/path/simforge-oss/dev-assets/richmond-field-station';
 const MIME: Record<string, string> = {
   '.json': 'application/json', '.gz': 'application/gzip', '.glb': 'model/gltf-binary',
@@ -15,9 +17,7 @@ function mapBundlePlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use('/map', (request, response, next) => {
         const relative = normalize(decodeURIComponent((request.url ?? '/').split('?')[0])).replace(/^(\.\.(\/|\\|$))+/, '');
-        const target = relative === '/browser-manifest'
-          ? join(MAP_BUNDLE, 'browser-manifest')
-          : join(MAP_BUNDLE, 'browser/3d', relative);
+        const target = join(MAP_BUNDLE, relative);
         if (!target.startsWith(MAP_BUNDLE)) return next();
         try {
           if (!statSync(target).isFile()) return next();

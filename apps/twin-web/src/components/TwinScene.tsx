@@ -175,7 +175,7 @@ export function TwinScene({ frames, camera, followActorId, cameraMode = 'chase',
 
   return <CityView
     className={className}
-    manifestUrl="/map/browser-manifest"
+    manifestUrl="/map/3d/manifest.json"
     ariaLabel={camera ? `${camera.id} calibrated digital twin render` : 'Richmond Field Station digital twin'}
     role="application"
     tabIndex={0}

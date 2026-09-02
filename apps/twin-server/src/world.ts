@@ -173,10 +173,10 @@ export class TwinWorld {
     this.coveredSpawnPoints = covered;
   }
 
-  /** Union of streamed tile AABBs (XZ) from the bundle's own browser manifest. */
+  /** Union of streamed tile AABBs (XZ) from the bundle's browser manifest (`3d/manifest.json`; tiles themselves are not shipped in-repo). */
   private static readTileCoverage(mapBundleDir: string): Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> {
     try {
-      const manifest = JSON.parse(readFileSync(path.join(mapBundleDir, 'browser-manifest'), 'utf8')) as {
+      const manifest = JSON.parse(readFileSync(path.join(mapBundleDir, '3d', 'manifest.json'), 'utf8')) as {
         tiles?: Array<{ bounds?: { min?: number[]; max?: number[] } }>;
       };
       const boxes: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];

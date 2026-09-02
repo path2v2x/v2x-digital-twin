@@ -1,0 +1,621 @@
+{
+  "version": "1.1.0",
+  "generator": "city-preprocess",
+  "created": "2026-04-17T16:30:00.788Z",
+  "scene": {
+    "bounds": {
+      "min": [
+        -240.40734767913818,
+        -24.43860790789985,
+        -413.7646198272705
+      ],
+      "max": [
+        386.36322021484375,
+        37.13112423480415,
+        146.4002013206482
+      ]
+    },
+    "totalTriangles": 679131,
+    "gridDimensions": [
+      3,
+      3
+    ],
+    "cellSize": [
+      153.9592244152012,
+      178.24439385914494
+    ],
+    "origin": [
+      -155.367794739378,
+      4.385797471728516,
+      -408.575513116768
+    ],
+    "lodLevels": 4,
+    "coordinateSystem": "y-up"
+  },
+  "tiles": [
+    {
+      "id": "tile_0_2",
+      "gridX": 0,
+      "gridZ": 2,
+      "bounds": {
+        "min": [
+          -155.367794739378,
+          4.385797471728516,
+          -52.08672539847811
+        ],
+        "max": [
+          -1.4085703241768215,
+          27.446322290007018,
+          126.15766846066686
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_0_2.lod0.glb",
+          "triangles": 174271,
+          "fileSize": 122872292,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_0_2.lod1.glb",
+          "triangles": 107529,
+          "fileSize": 65116236,
+          "geometricError": 0.4805398087963954
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_0_2.lod2.glb",
+          "triangles": 75305,
+          "fileSize": 22503628,
+          "geometricError": 1.9221592351855816
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_0_2.lod3.glb",
+          "triangles": 73769,
+          "fileSize": 7276676,
+          "geometricError": 7.6886369407423265
+        }
+      ]
+    },
+    {
+      "id": "tile_1_1",
+      "gridX": 1,
+      "gridZ": 1,
+      "bounds": {
+        "min": [
+          -1.4085703241768215,
+          4.385797471728516,
+          -230.33111925762304
+        ],
+        "max": [
+          152.55065409102437,
+          27.446322290007018,
+          -52.08672539847811
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_1_1.lod0.glb",
+          "triangles": 85468,
+          "fileSize": 32578780,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_1_1.lod1.glb",
+          "triangles": 52542,
+          "fileSize": 25430868,
+          "geometricError": 0.3365132568780869
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_1_1.lod2.glb",
+          "triangles": 38428,
+          "fileSize": 9719572,
+          "geometricError": 1.3460530275123477
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_1_1.lod3.glb",
+          "triangles": 37516,
+          "fileSize": 3364052,
+          "geometricError": 5.384212110049391
+        }
+      ]
+    },
+    {
+      "id": "tile_1_2",
+      "gridX": 1,
+      "gridZ": 2,
+      "bounds": {
+        "min": [
+          -1.4085703241768215,
+          4.385797471728516,
+          -52.08672539847811
+        ],
+        "max": [
+          152.55065409102437,
+          27.446322290007018,
+          126.15766846066686
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_1_2.lod0.glb",
+          "triangles": 63490,
+          "fileSize": 44818228,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_1_2.lod1.glb",
+          "triangles": 39106,
+          "fileSize": 31941464,
+          "geometricError": 0.3182592957182609
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_1_2.lod2.glb",
+          "triangles": 27458,
+          "fileSize": 11602480,
+          "geometricError": 1.2730371828730436
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_1_2.lod3.glb",
+          "triangles": 26918,
+          "fileSize": 3566184,
+          "geometricError": 5.092148731492174
+        }
+      ]
+    },
+    {
+      "id": "tile_1_0",
+      "gridX": 1,
+      "gridZ": 0,
+      "bounds": {
+        "min": [
+          -1.4085703241768215,
+          4.385797471728516,
+          -408.575513116768
+        ],
+        "max": [
+          152.55065409102437,
+          27.446322290007018,
+          -230.33111925762304
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_1_0.lod0.glb",
+          "triangles": 32472,
+          "fileSize": 9817276,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_1_0.lod1.glb",
+          "triangles": 26974,
+          "fileSize": 9762464,
+          "geometricError": 0.5693375616394587
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_1_0.lod2.glb",
+          "triangles": 25904,
+          "fileSize": 4259636,
+          "geometricError": 2.277350246557835
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_1_0.lod3.glb",
+          "triangles": 25788,
+          "fileSize": 1624204,
+          "geometricError": 9.10940098623134
+        }
+      ]
+    },
+    {
+      "id": "tile_2_0",
+      "gridX": 2,
+      "gridZ": 0,
+      "bounds": {
+        "min": [
+          152.55065409102437,
+          4.385797471728516,
+          -408.575513116768
+        ],
+        "max": [
+          306.5098785062255,
+          27.446322290007018,
+          -230.33111925762304
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_2_0.lod0.glb",
+          "triangles": 6900,
+          "fileSize": 5790304,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_2_0.lod1.glb",
+          "triangles": 6146,
+          "fileSize": 5781276,
+          "geometricError": 0.24726187339672046
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_2_0.lod2.glb",
+          "triangles": 6088,
+          "fileSize": 2387832,
+          "geometricError": 0.9890474935868818
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_2_0.lod3.glb",
+          "triangles": 6076,
+          "fileSize": 781268,
+          "geometricError": 3.9561899743475273
+        }
+      ]
+    },
+    {
+      "id": "tile_2_1",
+      "gridX": 2,
+      "gridZ": 1,
+      "bounds": {
+        "min": [
+          152.55065409102437,
+          4.385797471728516,
+          -230.33111925762304
+        ],
+        "max": [
+          306.5098785062255,
+          27.446322290007018,
+          -52.08672539847811
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_2_1.lod0.glb",
+          "triangles": 33903,
+          "fileSize": 7610992,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_2_1.lod1.glb",
+          "triangles": 32783,
+          "fileSize": 5632356,
+          "geometricError": 0.6838107582645201
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_2_1.lod2.glb",
+          "triangles": 32783,
+          "fileSize": 2323472,
+          "geometricError": 2.7352430330580804
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_2_1.lod3.glb",
+          "triangles": 32783,
+          "fileSize": 1070916,
+          "geometricError": 10.940972132232321
+        }
+      ]
+    },
+    {
+      "id": "tile_0_1",
+      "gridX": 0,
+      "gridZ": 1,
+      "bounds": {
+        "min": [
+          -155.367794739378,
+          4.385797471728516,
+          -230.33111925762304
+        ],
+        "max": [
+          -1.4085703241768215,
+          27.446322290007018,
+          -52.08672539847811
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/tile_0_1.lod0.glb",
+          "triangles": 808,
+          "fileSize": 13749020,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/tile_0_1.lod1.glb",
+          "triangles": 430,
+          "fileSize": 3783060,
+          "geometricError": 0.008417102685183418
+        },
+        {
+          "level": 2,
+          "file": "tiles/tile_0_1.lod2.glb",
+          "triangles": 380,
+          "fileSize": 1044908,
+          "geometricError": 0.033633030470340025
+        },
+        {
+          "level": 3,
+          "file": "tiles/tile_0_1.lod3.glb",
+          "triangles": 380,
+          "fileSize": 295064,
+          "geometricError": 0.1345321218813601
+        }
+      ]
+    }
+  ],
+  "staticLayers": [
+    {
+      "id": "road",
+      "file": "tiles/road.glb",
+      "triangles": 115903,
+      "fileSize": 83460976
+    }
+  ],
+  "vegetationTiles": [
+    {
+      "id": "veg_0_2",
+      "gridX": 0,
+      "gridZ": 2,
+      "bounds": {
+        "min": [
+          -155.367794739378,
+          -7.132601151597161,
+          -52.08672539847811
+        ],
+        "max": [
+          -1.4085703241768215,
+          37.551239831260034,
+          126.15766846066686
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/veg_0_2.lod0.glb",
+          "triangles": 23436,
+          "fileSize": 1342740,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/veg_0_2.lod1.glb",
+          "triangles": 18120,
+          "fileSize": 1280648,
+          "geometricError": 0.24380282924761423
+        },
+        {
+          "level": 2,
+          "file": "tiles/veg_0_2.lod2.glb",
+          "triangles": 16966,
+          "fileSize": 683676,
+          "geometricError": 0.9752113169904569
+        },
+        {
+          "level": 3,
+          "file": "tiles/veg_0_2.lod3.glb",
+          "triangles": 16956,
+          "fileSize": 493932,
+          "geometricError": 3.9008452679618277
+        }
+      ],
+      "prototypes": [
+        {
+          "meshName": "Grass",
+          "triangles": 6,
+          "instanceCount": 24
+        },
+        {
+          "meshName": "Oak",
+          "triangles": 23430,
+          "instanceCount": 1
+        }
+      ],
+      "instanceFile": "tiles/veg_0_2.instances.json"
+    },
+    {
+      "id": "veg_1_1",
+      "gridX": 1,
+      "gridZ": 1,
+      "bounds": {
+        "min": [
+          -1.4085703241768215,
+          -7.132601151597161,
+          -230.33111925762304
+        ],
+        "max": [
+          152.55065409102437,
+          37.551239831260034,
+          -52.08672539847811
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/veg_1_1.lod0.glb",
+          "triangles": 23436,
+          "fileSize": 1342868,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/veg_1_1.lod1.glb",
+          "triangles": 18120,
+          "fileSize": 1280776,
+          "geometricError": 0.24380282924761423
+        },
+        {
+          "level": 2,
+          "file": "tiles/veg_1_1.lod2.glb",
+          "triangles": 16966,
+          "fileSize": 683808,
+          "geometricError": 0.9752113169904569
+        },
+        {
+          "level": 3,
+          "file": "tiles/veg_1_1.lod3.glb",
+          "triangles": 16956,
+          "fileSize": 494064,
+          "geometricError": 3.9008452679618277
+        }
+      ],
+      "prototypes": [
+        {
+          "meshName": "Grass",
+          "triangles": 6,
+          "instanceCount": 50
+        },
+        {
+          "meshName": "Oak",
+          "triangles": 23430,
+          "instanceCount": 22
+        },
+        {
+          "meshName": "Tree",
+          "triangles": 23430,
+          "instanceCount": 7
+        }
+      ],
+      "instanceFile": "tiles/veg_1_1.instances.json"
+    },
+    {
+      "id": "veg_1_0",
+      "gridX": 1,
+      "gridZ": 0,
+      "bounds": {
+        "min": [
+          -1.4085703241768215,
+          -7.132601151597161,
+          -408.575513116768
+        ],
+        "max": [
+          152.55065409102437,
+          37.551239831260034,
+          -230.33111925762304
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/veg_1_0.lod0.glb",
+          "triangles": 23436,
+          "fileSize": 1342740,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/veg_1_0.lod1.glb",
+          "triangles": 18120,
+          "fileSize": 1280648,
+          "geometricError": 0.24380282924761423
+        },
+        {
+          "level": 2,
+          "file": "tiles/veg_1_0.lod2.glb",
+          "triangles": 16966,
+          "fileSize": 683676,
+          "geometricError": 0.9752113169904569
+        },
+        {
+          "level": 3,
+          "file": "tiles/veg_1_0.lod3.glb",
+          "triangles": 16956,
+          "fileSize": 493932,
+          "geometricError": 3.9008452679618277
+        }
+      ],
+      "prototypes": [
+        {
+          "meshName": "Grass",
+          "triangles": 6,
+          "instanceCount": 33
+        },
+        {
+          "meshName": "Oak",
+          "triangles": 23430,
+          "instanceCount": 9
+        }
+      ],
+      "instanceFile": "tiles/veg_1_0.instances.json"
+    },
+    {
+      "id": "veg_1_2",
+      "gridX": 1,
+      "gridZ": 2,
+      "bounds": {
+        "min": [
+          -1.4085703241768215,
+          -7.132601151597161,
+          -52.08672539847811
+        ],
+        "max": [
+          152.55065409102437,
+          37.551239831260034,
+          126.15766846066686
+        ]
+      },
+      "lods": [
+        {
+          "level": 0,
+          "file": "tiles/veg_1_2.lod0.glb",
+          "triangles": 23436,
+          "fileSize": 1342740,
+          "geometricError": 0
+        },
+        {
+          "level": 1,
+          "file": "tiles/veg_1_2.lod1.glb",
+          "triangles": 18120,
+          "fileSize": 1280648,
+          "geometricError": 0.24380282924761423
+        },
+        {
+          "level": 2,
+          "file": "tiles/veg_1_2.lod2.glb",
+          "triangles": 16966,
+          "fileSize": 683676,
+          "geometricError": 0.9752113169904569
+        },
+        {
+          "level": 3,
+          "file": "tiles/veg_1_2.lod3.glb",
+          "triangles": 16956,
+          "fileSize": 493932,
+          "geometricError": 3.9008452679618277
+        }
+      ],
+      "prototypes": [
+        {
+          "meshName": "Grass",
+          "triangles": 6,
+          "instanceCount": 12
+        },
+        {
+          "meshName": "Oak",
+          "triangles": 23430,
+          "instanceCount": 3
+        }
+      ],
+      "instanceFile": "tiles/veg_1_2.instances.json"
+    }
+  ]
+}
