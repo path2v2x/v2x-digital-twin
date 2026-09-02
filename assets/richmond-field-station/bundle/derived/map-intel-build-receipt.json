@@ -1,0 +1,39 @@
+{
+  "contractVersion": "uniscenario.map-intel-build/v1",
+  "builder": {
+    "package": "@simforge/uniscenario-map-intel",
+    "version": "0.0.1"
+  },
+  "mapId": "richmond-field-station",
+  "catalogRevision": "266e26a3fec7d42047c2f47d1ac2e0d6",
+  "sourceHashes": {
+    "lane-polygons": "d62279f316af23f0c940c869107c6b3c028913658d89a70902de6d0ff71f13fe",
+    "map-geojson": "64c62a84aa135349ba840a7cb6c45319987e2ff293e7c122289fc222d39b8f6b",
+    "overlay-payload": "c82daed40c9a9ad3d8976efdd17ded99f48bb27b1ba2797ff313f16cec30aa84",
+    "search-index": "ffe75cb240c12d64b28f38285e95c9b185cdfafb85e267e014acac3e402ecc40",
+    "signals": "1c0f352259389d7b35a7766efcd0d73e9ddf4895d5346e2b7636d23eaf9d3fff",
+    "topology-index": "c7be1a65a96dc814001de69821c8199c34e8a0c68dd08ea25df49ddbcbac8505",
+    "xodr": "80704cd1bc2563a63d5d365a5b0c43936222cef811f513e89129a8205e464643"
+  },
+  "outputs": {
+    "locations": {
+      "path": "derived/locations.json.gz",
+      "sha256": "4f459d52937aedc5ff3410546da00fe6b5872293ff354c17771bea7a00d21a61",
+      "sizeBytes": 149527
+    },
+    "derivedTopology": {
+      "path": "derived/topology-derived.json.gz",
+      "sha256": "5780e5c715321c2f2e0402f9dc4bf34fff0ad1696518fb7784f95107fafb76cd",
+      "sizeBytes": 89618
+    },
+    "traceSignals": {
+      "path": "derived/signals.json.gz",
+      "sha256": "c1267752cb7449a8a291419764b43e342d1acf2ab9c94d983426af6600314369",
+      "sizeBytes": 1290,
+      "signalHeadCount": 8,
+      "signCount": 25
+    }
+  },
+  "locationsBytes": 149527,
+  "derivedBytes": 89618
+}

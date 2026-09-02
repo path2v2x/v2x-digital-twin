@@ -51,7 +51,7 @@ Default ports are configurable:
 |---|---:|---|
 | `TWIN_WS_PORT` | `8765` | `/twin`, `/drive`, and `/camera-feeds` WebSockets |
 | `TWIN_HTTP_PORT` | `8090` | health and MJPEG streams |
-| `TWIN_MAP_BUNDLE` | `/home/path/simforge-oss/dev-assets/richmond-field-station` | SimForge map bundle |
+| `TWIN_MAP_BUNDLE` | `assets/richmond-field-station/bundle` | logical map bundle: `map.xodr`, `topology-index.json.gz`, `signals.geojson.gz`, `derived/{topology-derived,locations}.json.gz` (no 3D tiles; produced by the simforge-oss map pipeline, see `derived/map-intel-build-receipt.json`) |
 | `TWIN_SYNC_LOCAL` | `0` | enable local detection polling |
 | `TWIN_DETECTIONS_URL` | `http://127.0.0.1:8090/detections/latest` | co-perception summary endpoint |
 | `TWIN_CAMERA_URL_TEMPLATE` | `rtsp://127.0.0.1:8554/{channel}` | ffmpeg input URL template |
@@ -92,7 +92,7 @@ ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or c
 
 ## path-rfs deployment
 
-The drive application already owns ports 8765 and 8090 on path-rfs. The twin therefore runs there with:
+On path-rfs the CARLA drive server (`path2v2x/v2x-drive`) owns `:8765`, and `:8090` was the retired perception service's port. The twin therefore runs there with:
 
 ```text
 TWIN_WS_PORT=8865

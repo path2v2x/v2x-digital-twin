@@ -55,7 +55,7 @@ export function loadConfig(): TwinConfig {
   return {
     wsPort: num('TWIN_WS_PORT', 8765),
     httpPort: num('TWIN_HTTP_PORT', 8090),
-    mapBundleDir: str('TWIN_MAP_BUNDLE', '/home/path/simforge-oss/dev-assets/richmond-field-station'),
+    mapBundleDir: str('TWIN_MAP_BUNDLE', path.join(REPO_ROOT, 'assets', 'richmond-field-station', 'bundle')),
     mapId: 'richmond-field-station',
     camerasJson: str('TWIN_CAMERAS_JSON', path.join(REPO_ROOT, 'config', 'cameras.json')),
     footageMp4: str(
