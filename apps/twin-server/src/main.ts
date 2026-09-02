@@ -31,7 +31,7 @@ sync.start();
 publisher.start();
 const servers = startServers({ world, config, sync, traffic, trajectories, scenarios });
 
-console.log(`  Sync     : local=${config.syncLocal ? 'on' : 'off'} recorded=${config.recordedDetections}`);
+console.log(`  Sync     : local=${config.syncLocal ? `polling ${config.detectionsUrl}` : 'off'} recorded=${config.recordedDetections}`);
 console.log(`  Publish  : ${config.publishDir} (local only)`);
 const spawnStats = world.spawnPointStats();
 console.log(`  Spawn    : ${spawnStats.covered}/${spawnStats.total} road points inside streamed tile coverage (ego prefers covered)`);
