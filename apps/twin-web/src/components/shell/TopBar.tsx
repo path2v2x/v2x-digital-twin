@@ -74,6 +74,10 @@ export function TopBar({ mode, onMode, connected, fixtureMode, clockMode, alertC
           aria-label="World settings"
           onClick={onSettings}
         ><SettingsIcon />Settings</button>
+
+        {/* The only link out of the twin: back to the V2X landing page. The
+          * drive app and architecture page are siblings reached from there. */}
+        <a className="action" href="https://path2v2x.net/" aria-label="V2X home">&larr; Home</a>
       </div>
     </div>
   </header>;
