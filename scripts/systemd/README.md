@@ -1,30 +1,13 @@
-# Surviving V2X systemd units
+# path-rfs systemd deployment
 
-The SimForge twin itself is started from the repository root with `pnpm dev`.
-That command owns twin-server (`:8765`, `:8090`) and twin-web (`:5188`). The
-retired simulator, Python drive bridge, dashboard, hourly restart, and frontend
-link-repair units are not part of this directory.
-
-The remaining units support the independent live perception pipeline and
-optional Cloudflare transports:
-
-| Unit | Purpose |
-|---|---|
-| `v2x-perception.service` | Four-camera live ingestion and detection |
-| `v2x-cloudflared-drive.service` | Optional transport to twin-server `:8765` |
-| `v2x-cloudflared-perception.service` | Optional transport to perception/twin MJPEG `:8090` |
-
-`v2x-perception.env.example` documents the perception service environment.
-Install only the units needed by the host:
+Install `v2x-twin-server.service` on path-rfs after running the SimForge OSS vendor script and `pnpm install` in `/home/path/v2x-digital-twin`.
 
 ```bash
-sudo install -m 0644 scripts/systemd/v2x-perception.service /etc/systemd/system/
-sudo install -m 0644 scripts/systemd/v2x-perception.env.example /etc/v2x-perception.env
-sudo install -m 0644 scripts/systemd/v2x-cloudflared-drive.service /etc/systemd/system/
-sudo install -m 0644 scripts/systemd/v2x-cloudflared-perception.service /etc/systemd/system/
+sudo install -m 0644 scripts/systemd/v2x-twin-server.service /etc/systemd/system/
 sudo systemctl daemon-reload
+sudo systemctl enable --now v2x-twin-server.service
 ```
 
-Do not install units from older revisions: they target paths and processes that
-no longer exist. See `../../docs/twin-protocol-v2.md` for the active `/drive`
-and `/twin` transports.
+The checked-in unit runs as `path`. If the checkout belongs to Andrew Park's `jpark` account, change both `User` and `Group` to `jpark` before installing it. The service uses WebSocket port 8865 and HTTP port 8190 because the drive application owns 8765 and 8090 on path-rfs.
+
+`TWIN_DETECTIONS_URL=http://127.0.0.1:8090/detections/latest` is a deployment placeholder for the local `path2v2x/co-perception` endpoint. Change it if co-perception is bound to another local port. `TWIN_CAMERA_URL_TEMPLATE` points at the local camera relay and substitutes `{channel}` with `ch1` through `ch4`.

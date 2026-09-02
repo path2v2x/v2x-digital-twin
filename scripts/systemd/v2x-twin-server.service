@@ -1,0 +1,23 @@
+[Unit]
+Description=V2X Digital Twin Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=path
+Group=path
+WorkingDirectory=/home/path/v2x-digital-twin
+Environment=NODE_ENV=production
+Environment=TWIN_WS_PORT=8865
+Environment=TWIN_HTTP_PORT=8190
+Environment=TWIN_SYNC_LOCAL=1
+Environment=TWIN_DETECTIONS_URL=http://127.0.0.1:8090/detections/latest
+Environment=TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
+ExecStart=/usr/bin/env pnpm --dir apps/twin-server start
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target

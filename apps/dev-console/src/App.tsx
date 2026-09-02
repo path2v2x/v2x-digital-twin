@@ -454,7 +454,8 @@ export default function App() {
 
   useEffect(() => {
     const local = /^(localhost|127\.|10\.|192\.168\.|100\.|path-b860i)/.test(location.hostname)
-    setUrl(local ? `ws://${location.hostname}:8765/drive` : 'wss://engine-palm-naples-fri.trycloudflare.com/drive')
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+    setUrl(local ? `ws://${location.hostname}:8765/drive` : `${protocol}//${location.host}/drive`)
     try { setSaved(JSON.parse(localStorage.getItem(LS_KEY) || '[]')) } catch { /* ignore */ }
   }, [])
 
