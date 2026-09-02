@@ -1,103 +1,36 @@
-# V2X SimForge cutover status
+# v2x-digital-twin status
 
-**State:** SimForge-native twin is the only simulation runtime. The CARLA world,
-Python bridge, ScenarioRunner assets, and legacy SvelteKit/Amplify dashboard
-have been removed.
+## Current state
 
-## Active architecture
+The digital twin runs entirely on vendored `@simforge-oss/*` packages. Historical lineage: the former CARLA runtime, cloud ingest surfaces, bundled perception copy, and tunnel deployment scripts have been removed.
 
-| Component | Responsibility | Interface |
-|---|---|---|
-| `apps/twin-server` | Shared SimForge engine world, drive sessions, twin sync, scenario templates, traffic, truth publication | WS `:8765` (`/drive`, `/twin`); HTTP `:8090` (MJPEG, health) |
-| `apps/twin-web` | React/Three.js digital-twin client using `@simforge/viewer` | Vite `:5188` |
-| `apps/perception` | Independent live camera ingestion and real object detection | Existing perception service/API |
-| `apps/dev-console` | Low-level preserved `/drive` JSON protocol console | Defaults to `ws://localhost:8765/drive` |
-
-The engine dependency is the pinned
-[SimForgeinc/simforge](https://github.com/SimForgeinc/simforge) checkout described
-in `apps/twin-server/README.md`. Native templates, trajectories, and traffic
-profiles are self-contained under `apps/twin-server/assets`; no runtime path
-points into the deleted bridge.
-
-Protocol details and documented compatibility behavior are authoritative in
-[docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).
-
-## The client is moving to SimForge Studio
-
-The twin's user interface is becoming a first-class **Drive** app inside
-`studio` in [SimForgeinc/simforge-oss](https://github.com/SimForgeinc/simforge-oss)
-(branch `feat/drive-continuous-world`), rather than a local look-alike of the
-editor. `apps/twin-web` was a hand-written imitation: 3,496 lines under `src`,
-of which 2,342 (66.99%) were presentational chrome and CSS re-implementing the
-top bar, tool rail, inspector, timeline, toasts, icons and token system that
-Studio already ships.
-
-Studio's Drive app attaches to this server as a `WorldSource`: truth over
-`ws://<host>:8765/twin`, commands over `/drive`, and camera feeds proxied
-same-origin from `:8090`. Verified against this server on 2026-08-25 — world
-clock 4,154.6 s at tick 83,093, `cam-001-ch1` live with a truthful badge and a
-single MJPEG connection open.
-
-Camera calibration is no longer client constants. `config/cameras.json` binds
-the mast to `traffic_light` SignalFeature **372** (measured 0.7 m from the
-surveyed position) and `buildTwinCameras` emits rigs in the shape
-`@simforge/maps` consumes, so pose derives from map geometry. The feature's
-`z_offset` is the signal head at 4.48 m and is *not* the camera height; each
-channel keeps its own 7 m mount.
-
-### `apps/twin-web` is retained deliberately
-
-It still uniquely owns product surfaces that Studio Drive does not yet provide,
-so deleting it now would lose function:
-
-| Surface | Where |
+| Surface | State |
 |---|---|
-| V2X zone drawing and `sync_v2x_zones` | `src/state/zones.ts`, `src/components/shell/ZoneOverlay.tsx` |
-| 24-hour replay control (`twin_replay`) | `src/App.tsx:92-96` |
-| Trajectory playback trigger (`start_trajectory`) | `src/App.tsx:140` |
+| `apps/twin-server` | Active; shared world, `/twin`, `/drive`, `/camera-feeds`, `/streams/`, local detection sync, replay |
+| `apps/twin-web` | Active interim client until Studio Drive covers zones, replay, and trajectories |
+| `apps/dev-console` | Active developer protocol console |
+| `path2v2x/co-perception` | External and authoritative for live detections |
+| SimForge Studio Drive | Target UI at `simforge-oss/studio/app/dashboard/drive`; configured with `NEXT_PUBLIC_DRIVE_TWIN_URL` |
 
-EVA alerts, ghost mirroring, traffic presets and local publication are
-server-side and already work for either client. `apps/twin-web` should be
-deleted once zones, replay and trajectories exist on the Studio surface — not
-before.
+## Dependency pin
 
-## Local operation
+`vendor/simforge-oss/LOCK.json` pins `v0.1.0-rc.60` at commit `be6e51503c09217ed73ef2b0b2fa06841159e29e`. It is the newest tag and successfully builds the required `engine`, `compiler`, `maps`, `training-env`, `viewer`, `asset-catalog`, and `scenario` packages. All packed archives are committed because each is below 10 MB. The pack process removes source-only development export conditions and preserves the compiler `/node` subpath.
 
-From the repository root:
+Regenerate the dependency set with:
 
 ```bash
-pnpm dev
+scripts/vendor-simforge-oss.sh v0.1.0-rc.60
+pnpm install
 ```
 
-The root script starts only `apps/twin-server` and `apps/twin-web`. MJPEG is
-served by twin-server; no separate simulator process or bridge launcher is
-required. The independent perception pipeline remains available through
-`scripts/launch-perception.sh`.
+## Runtime contracts
 
-## Cutover verification
+The server defaults to WS 8765 and HTTP 8090, with `TWIN_WS_PORT` and `TWIN_HTTP_PORT` overrides. On path-rfs it uses 8865 and 8190 because the drive application owns the default pair.
 
-Verified after deletion on 2026-08-25:
+Local detections are enabled with `TWIN_SYNC_LOCAL=1`. `GET $TWIN_DETECTIONS_URL` must return `{"cameras":{"<camId>":{"ts":<epoch seconds>,"detections":[{"object_id":"...","gps_location":{"lat":0,"lon":0}}]}}}`. This is the interface `path2v2x/co-perception` must expose.
 
-- `pnpm --dir apps/twin-server test`: **6 test files passed, 19/19 tests passed**.
-- `pnpm --dir apps/twin-web build`: **passed** (`tsc -b && vite build`, 147 modules transformed).
-- `npx vite build` in `apps/dev-console`: **passed** (1,810 modules transformed).
-- focused TypeScript check for `apps/dev-console/src/{main,App}.tsx`: **passed**.
-- root `package.json` `dev` script references only the living twin-server and
-  twin-web paths.
+Live camera inputs use `TWIN_CAMERA_URL_TEMPLATE`, defaulting to `rtsp://127.0.0.1:8554/{channel}`. The server uses TCP for RTSP, publishes MJPEG itself, falls back to recorded footage, and periodically retries the local source.
 
-The twin-web build reports Vite's existing large-chunk advisory for the bundled
-viewer; it is not a build failure.
+## Deployment
 
-## Removed surfaces
-
-- `apps/bridge` and all bridge requirements, tests, tools, `.xosc` scenarios,
-  ScenarioRunner patches, and its Dockerfile
-- `apps/web` and the retired Amplify deployment/recovery surface
-- obsolete simulator/bridge launch, wait, restart, and systemd units
-- obsolete frontend-link repair and legacy dashboard service units
-- stale CARLA operating procedures, generated browser evidence, and agent state
-
-Remaining uses of the retired simulator's name are historical migration
-lineage, preserved v1 wire-field names, coordinate compatibility names, or the
-perception tool's explicit non-mutation statement. They do not identify a
-runtime dependency.
+`scripts/systemd/v2x-twin-server.service` runs the server from `/home/path/v2x-digital-twin` with ports 8865/8190, local detection sync, and local camera URLs. `deploy/nginx-twin.conf` exposes `/twin`, `/drive`, `/camera-feeds`, and `/streams/` at `twin.path2v2x.net`. The service account and local co-perception port must match the path-rfs host before installation.
