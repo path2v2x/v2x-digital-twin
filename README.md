@@ -7,9 +7,8 @@ SimForge-native digital twin for the Richmond Field Station V2X deployment. The 
 | Component | Responsibility | Default interface |
 |---|---|---|
 | `apps/twin-server` | SimForge OSS world, drive commands, truth publication, local detection mirroring, MJPEG relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/` |
-| `apps/twin-web` | Interim Vite/React/Three.js client | HTTP `:5188` |
 | `apps/dev-console` | Low-level `/drive` protocol console | Vite development server |
-| SimForge Studio Drive | Target user interface in `simforge-oss/studio/app/dashboard/drive` | Set `NEXT_PUBLIC_DRIVE_TWIN_URL` to the public `/twin` WebSocket URL |
+| SimForge Studio Drive | Operator interface from `SimForgeinc/simforge-oss` | HTTP `:5199`; connects through the public twin WebSocket routes |
 
 `path2v2x/co-perception` is the only perception implementation. It is a separate repository and process.
 
@@ -42,7 +41,6 @@ Focused commands:
 pnpm --dir apps/twin-server start
 pnpm --dir apps/twin-server typecheck
 pnpm --dir apps/twin-server test
-pnpm --dir apps/twin-web build
 ```
 
 Default ports are configurable:
@@ -102,6 +100,15 @@ TWIN_DETECTIONS_URL=http://127.0.0.1:8090/detections/latest
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 ```
 
-Install `scripts/systemd/v2x-twin-server.service` after selecting the correct `path` or `jpark` service account. `deploy/nginx-twin.conf` proxies `twin.path2v2x.net` WebSockets to `:8865` and `/streams/` to `:8190`. Adjust the detections URL if co-perception binds a different local port.
+Install `scripts/systemd/v2x-twin-server.service` for the runtime. The operator
+UI is a separate `SimForgeinc/simforge-oss` checkout at
+`/home/path/simforge-oss`; install `deploy/v2x-twin-studio.service` and copy
+`deploy/studio.env.example` to `/etc/v2x-twin-studio.env`.
+`deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, health and camera
+streams on `:8190`, the legacy map alias under `/map/`, and proxies the Studio
+Drive UI to loopback `:5199`. The Studio service uses its development boot path
+because the current upstream production build cannot resolve the playback SUMO
+worker module; boot performs the required migrations and seed before starting
+Next.js.
 
 Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md). The Studio migration plan is in [docs/twin-on-studio-plan.md](docs/twin-on-studio-plan.md).

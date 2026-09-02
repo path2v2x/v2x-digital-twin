@@ -4,9 +4,8 @@
   "private": true,
   "description": "SimForge OSS-native V2X digital twin with WebSocket truth, control, and camera feed transport.",
   "scripts": {
-    "dev": "sh -c 'trap \"kill 0\" INT TERM; pnpm --dir apps/twin-server dev & pnpm --dir apps/twin-web dev & wait'",
+    "dev": "pnpm --dir apps/twin-server dev",
     "dev:server": "pnpm --dir apps/twin-server dev",
-    "dev:web": "pnpm --dir apps/twin-web dev",
     "test:server": "pnpm --dir apps/twin-server test"
   }
 }

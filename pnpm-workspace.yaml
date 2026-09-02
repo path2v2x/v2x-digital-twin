@@ -1,6 +1,5 @@
 packages:
   - apps/twin-server
-  - apps/twin-web
 
 overrides:
   '@simforge-oss/asset-catalog': file:vendor/simforge-oss/simforge-oss-asset-catalog-0.1.0-rc.60.tgz

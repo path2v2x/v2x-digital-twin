@@ -1,0 +1,16 @@
+[Unit]
+Description=SimForge Studio Drive for the V2X twin
+After=network-online.target v2x-twin-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=path
+WorkingDirectory=/home/path/simforge-oss/studio
+EnvironmentFile=/etc/v2x-twin-studio.env
+ExecStart=/usr/bin/pnpm --filter @simforge-oss/studio dev
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
