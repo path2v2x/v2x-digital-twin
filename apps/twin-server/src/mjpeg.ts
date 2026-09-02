@@ -122,9 +122,17 @@ interface ChannelState {
   targetMode: Exclude<FeedMode, 'starting'> | null;
   liveRetryTimer: NodeJS.Timeout | null;
   liveUnavailableUntil: number;
+  /** Consecutive live launches that exited without ever producing a frame. */
+  liveFailures: number;
 }
 
-const LIVE_RETRY_MS = 5 * 60 * 1000;
+/**
+ * Live input retry: 10 s after a live run that had produced frames (an upstream
+ * camera blip; the relay republishes within seconds), doubling per consecutive
+ * frameless failure up to 2 min so a dead source does not spin ffmpeg.
+ */
+const LIVE_RETRY_BASE_MS = 10_000;
+const LIVE_RETRY_MAX_MS = 120_000;
 
 export class MjpegService {
   private readonly footage: string;
@@ -151,7 +159,7 @@ export class MjpegService {
 
   start(): void {
     for (const channel of CHANNELS) {
-      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, revision: 0, clients: new Set(), mode: 'starting', targetMode: null, liveRetryTimer: null, liveUnavailableUntil: 0 };
+      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, revision: 0, clients: new Set(), mode: 'starting', targetMode: null, liveRetryTimer: null, liveUnavailableUntil: 0, liveFailures: 0 };
       this.channels.set(channel, state);
       void this.launch(channel, state);
     }
@@ -205,13 +213,18 @@ export class MjpegService {
         state.latest = state.buffer.subarray(start, end + 2);
         state.revision += 1;
         state.mode = state.targetMode ?? 'starting';
+        if (state.mode === 'live') state.liveFailures = 0;
         state.buffer = state.buffer.subarray(end + 2);
       }
       // Bound memory if EOI never appears (corrupt stream).
       if (state.buffer.length > 8 * 1024 * 1024) state.buffer = Buffer.alloc(0);
     });
     child.on('exit', () => {
-      if (targetMode === 'live') state.liveUnavailableUntil = Date.now() + LIVE_RETRY_MS;
+      if (targetMode === 'live') {
+        const producedFrames = state.mode === 'live';
+        if (!producedFrames) state.liveFailures += 1;
+        state.liveUnavailableUntil = Date.now() + Math.min(LIVE_RETRY_BASE_MS * 2 ** state.liveFailures, LIVE_RETRY_MAX_MS);
+      }
       state.latest = null;
       state.mode = 'starting';
       state.targetMode = null;

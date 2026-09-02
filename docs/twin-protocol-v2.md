@@ -73,7 +73,7 @@ The sync status object includes `tracks`, `actors`, `poll_failures`, `detections
 
 `TWIN_CAMERA_URL_TEMPLATE` defaults to `rtsp://127.0.0.1:8554/{channel}`. The server substitutes `{channel}` with `ch1` through `ch4` and starts one ffmpeg process per channel. RTSP inputs use TCP transport; HTTP and other ffmpeg-supported local URLs are passed directly.
 
-If a live input exits, the server starts the recorded-footage replay and retries live input after five minutes. Set `TWIN_LIVE_FEEDS=0` to use recorded footage only. Feed states are `starting`, `live`, or `replay`.
+If a live input exits, the server starts the recorded-footage replay and retries live input after 10 s, doubling per consecutive frameless failure up to 2 min. Set `TWIN_LIVE_FEEDS=0` to use recorded footage only. Feed states are `starting`, `live`, or `replay`.
 
 The `/camera-feeds` binary envelope is:
 

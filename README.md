@@ -88,7 +88,7 @@ When `TWIN_SYNC_LOCAL=1`, `apps/twin-server/src/twinsync.ts` polls `GET $TWIN_DE
 - `rtsp://127.0.0.1:8554/{channel}` for MediaMTX or go2rtc;
 - `http://127.0.0.1:8081/{channel}` for a local HTTP stream source.
 
-ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after five minutes. Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`.
+ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min), so an upstream camera blip costs seconds of replay rather than minutes. Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`.
 
 ## path-rfs deployment
 
