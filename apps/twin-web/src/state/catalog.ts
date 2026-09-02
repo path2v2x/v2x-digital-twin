@@ -28,7 +28,7 @@ export const VEHICLES: readonly CatalogEntry[] = [
   { id: 'vehicle.dodge.charger', name: 'Dodge Charger', detail: 'car · 4 wheels' },
   { id: 'vehicle.nissan.patrol', name: 'Nissan Patrol', detail: 'car · 4 wheels' },
   { id: 'vehicle.mini.cooper', name: 'Mini Cooper', detail: 'car · 4 wheels' },
-  { id: 'vehicle.carlamotors.firetruck', name: 'Firetruck', detail: 'truck · EVA tagged' },
+  { id: 'vehicle.firetruck', name: 'Firetruck', detail: 'truck · EVA tagged' },
   { id: 'vehicle.mercedes.sprinter', name: 'Mercedes Sprinter', detail: 'van · 4 wheels' },
   { id: 'vehicle.volkswagen.t2', name: 'Volkswagen T2', detail: 'van · 4 wheels' },
   { id: 'vehicle.kawasaki.ninja', name: 'Kawasaki Ninja', detail: 'motorcycle · 2 wheels' },

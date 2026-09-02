@@ -94,7 +94,11 @@ export function startServers(deps: DriveDeps): TwinServers {
   });
 
   /* ---------------------------------------------------------- HTTP :8090 */
-  const mjpeg = new MjpegService(config.footageMp4, config.mjpegFps, config.liveFeeds ? { streamPrefix: config.kvsStreamPrefix, region: config.kvsRegion, profile: config.awsProfile } : null);
+  const mjpeg = new MjpegService(
+    config.footageMp4,
+    config.mjpegFps,
+    config.liveFeeds ? { urlTemplate: config.cameraUrlTemplate } : null,
+  );
   mjpeg.start();
   const httpServer = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -109,7 +113,7 @@ export function startServers(deps: DriveDeps): TwinServers {
     }
     if (url.pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ status: 'ok', engine: 'simforge', mode: sync.currentMode(), feeds: mjpeg.modes() }));
+      res.end(JSON.stringify({ status: 'ok', engine: 'simforge-oss', mode: sync.currentMode(), feeds: mjpeg.modes() }));
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json' });

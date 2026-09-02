@@ -4,7 +4,7 @@
  * Semantics ported from apps/bridge/digital_twin_bridge/twin_sync.py:
  *  - accepted object types: car | truck | bus | person (person → pedestrian);
  *  - a track upserts on every detection record {object_id, object_type,
- *    gps_location{latitude, longitude}, confidence};
+ *    gps_location{lat, lon}, confidence};
  *  - spawn at the flat-earth point (vehicle types adopt lane height/yaw when
  *    the detection lies within 4 m of a lane, like the v1 waypoint snap);
  *  - motion: interpolate toward each new fix over the poll interval (v1
@@ -21,14 +21,14 @@
  * track's last_seen is its record timestamp, and expiry is evaluated against
  * the virtual clock).
  */
-import type { ActorKind } from '@simforge/engine';
-import { sceneFromWgs84, wgs84FromScene, carlaYawDegFromSceneHeading, type SceneXZ } from './geo.js';
+import type { ActorKind } from '@simforge-oss/engine';
+import { sceneFromWgs84, wgs84FromScene, legacyYawDegFromSceneHeading, type SceneXZ } from './geo.js';
 import type { TwinWorld } from './world.js';
 
 export interface DetectionRecord {
   readonly object_id: string;
   readonly object_type?: string;
-  readonly gps_location?: { readonly latitude?: number; readonly longitude?: number };
+  readonly gps_location?: { readonly lat?: number; readonly lon?: number };
   readonly confidence?: number;
   readonly confidence_score?: number;
   readonly timestamp_utc?: string;
@@ -92,8 +92,8 @@ export class GhostMirror {
     for (const det of records) {
       const objectId = det.object_id;
       const objectType = det.object_type ?? 'car';
-      const lat = det.gps_location?.latitude;
-      const lon = det.gps_location?.longitude;
+      const lat = det.gps_location?.lat;
+      const lon = det.gps_location?.lon;
       if (!objectId || lat === undefined || lon === undefined) continue;
       if (!VEHICLE_TYPES[objectType] && objectType !== 'person') continue;
 
@@ -148,7 +148,7 @@ export class GhostMirror {
         if (geom) {
           const directedS = reversed ? geom.lengthM - nearest.s : nearest.s;
           const sample = this.world.bundle.graph.sampleDirected({ rsl: nearest.rsl, reversed }, directedS);
-          track.yawDeg = carlaYawDegFromSceneHeading(-sample.headingRad);
+          track.yawDeg = legacyYawDegFromSceneHeading(-sample.headingRad);
         }
       }
     }
@@ -230,15 +230,15 @@ export class GhostMirror {
         device_id: det.device_id ?? null,
         track_id: det.track_id ?? null,
         bbox: det.bbox ?? null,
-        gps_location: det.gps_location ?? (gps ? { latitude: gps.lat, longitude: gps.lon } : null),
+        gps_location: det.gps_location ?? (gps ? { lat: gps.lat, lon: gps.lon } : null),
         tracked_actor_id: track.actorId,
         actor_id: state ? track.actorId : null,
         actor_present: state !== undefined,
         actor_type: state ? `twin.${track.objectType}` : null,
-        carla_transform: state
+        transform: state
           ? {
               location: { x: state.x, y: state.z, z: 0 },
-              rotation: { pitch: 0, yaw: carlaYawDegFromSceneHeading(state.headingRad), roll: 0 },
+              rotation: { pitch: 0, yaw: legacyYawDegFromSceneHeading(state.headingRad), roll: 0 },
             }
           : null,
       };

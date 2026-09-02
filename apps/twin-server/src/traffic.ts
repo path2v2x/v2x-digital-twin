@@ -7,7 +7,7 @@
  */
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { materializeAmbientTrafficProfile, parseSimScenarioInput, type ActorKind, type SimScenarioInput } from '@simforge/engine';
+import { materializeAmbientTrafficProfile, parseSimScenarioInput, type ActorKind, type SimScenarioInput } from '@simforge-oss/engine';
 import type { TwinConfig } from './config.js';
 import type { TwinWorld } from './world.js';
 
@@ -42,7 +42,7 @@ export class TrafficController {
 
     const profileRaw = JSON.parse(readFileSync(path.join(this.trafficDir, `${name}.ambient.json`), 'utf8')) as Record<string, unknown>;
     // The materializer schema owns validation; strip the provenance note.
-    delete profileRaw['_v2xCarlaSource'];
+    delete profileRaw['_sourceProfile'];
     const result = materializeAmbientTrafficProfile(this.emptyBase, this.world.bundle.graph, profileRaw);
 
     let count = 0;

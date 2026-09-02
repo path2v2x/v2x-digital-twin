@@ -6,7 +6,7 @@
  * both paths; MJPEG endpoints. Writes a JSONL transcript to stdout.
  */
 import WebSocket from 'ws';
-import { TruthStreamClient, type TruthFrame } from '@simforge/training-env';
+import { TruthStreamClient, type TruthFrame } from '@simforge-oss/training-env';
 
 const WS = process.env['TWIN_WS'] ?? 'ws://127.0.0.1:8765';
 const HTTP = process.env['TWIN_HTTP'] ?? 'http://127.0.0.1:8090';

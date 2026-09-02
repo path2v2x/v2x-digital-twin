@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { ActorRenderer, type ActorView, type CityViewer } from '@simforge/viewer';
-import { CityView } from '@simforge/viewer/react';
+import { ActorRenderer, type ActorView, type CityViewer } from '@simforge-oss/viewer';
+import { CityView } from '@simforge-oss/viewer/react';
 import { Raycaster, Vector3, type Material, type Mesh, type Object3D } from 'three';
 import { applyCalibratedCamera, calibratedPose, type TwinCamera } from '../lib/cameras';
 import { interpolateFrames, type ActorClass, type TruthFrame } from '../lib/truth';

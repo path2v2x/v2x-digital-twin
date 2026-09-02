@@ -21,7 +21,7 @@
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { TruthStreamClient, type TruthFrame } from '@simforge/training-env';
+import { TruthStreamClient, type TruthFrame } from '@simforge-oss/training-env';
 import { ScenarioStore } from '../src/scenarios.js';
 import { startServers, type TwinServers } from '../src/server.js';
 import { TrafficController } from '../src/traffic.js';
@@ -196,7 +196,7 @@ describe('/drive round-trips (every preserved message type)', () => {
     const saved = await roundTrip({ type: 'save_scenario', name: 'RT saved', zones: [] }, 'scenario_saved');
     const savedFile = String(saved['file']);
     // Remove the live box first: reloading spawns at the recorded pose, and
-    // the engine rejects overlapping footprints (v1 CARLA behaved likewise).
+    // the engine rejects overlapping footprints.
     await roundTrip({ type: 'undo_place' }, 'object_removed');
     const reloaded = await roundTrip({ type: 'load_scenario', file: savedFile }, 'scenario_loaded');
     expect(Number(reloaded['spawned'])).toBe(1);

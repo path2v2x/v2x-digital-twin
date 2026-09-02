@@ -22,7 +22,7 @@
   "seed": "v2x-light",
   "radiusM": 250,
   "exclusionRadiusM": 12,
-  "_v2xCarlaSource": {
+  "_sourceProfile": {
     "drive_server.py TRAFFIC_PRESETS.light": {
       "vehicles": 20,
       "speed_diff": 30,

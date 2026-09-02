@@ -6,8 +6,7 @@
  *     — the most frequent object_id wins, records sort by timestamp;
  *  2. simple waypoint list [{t, lat, lon}] — t seconds from start.
  *
- * v1 drove a CARLA vehicle with pure pursuit + PID toward lerped targets;
- * v2 spawns a timedPolyline actor: the engine walks the exact scene-space
+ * A timedPolyline actor walks the exact scene-space
  * keyframes so the actor reaches every recorded GPS waypoint at its recorded
  * timestamp (tolerance: one tick, 50 ms). After the final keyframe the engine
  * hands off to physics braking and the actor idles, matching v1's
@@ -15,7 +14,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { ActorKind } from '@simforge/engine';
+import type { ActorKind } from '@simforge-oss/engine';
 import type { TwinConfig } from './config.js';
 import { sceneFromWgs84 } from './geo.js';
 import { kindForBlueprint, type TwinWorld } from './world.js';
@@ -46,7 +45,7 @@ interface V2xRecord {
   object_id?: string;
   object_type?: string;
   timestamp_utc?: string;
-  gps_location?: { latitude?: number; longitude?: number };
+  gps_location?: { lat?: number; lon?: number };
 }
 
 function parseV2xFormat(name: string, raw: unknown[], world: TwinWorld): ParsedTrajectory {
@@ -64,8 +63,8 @@ function parseV2xFormat(name: string, raw: unknown[], world: TwinWorld): ParsedT
   const points: TrajectoryPoint[] = [];
   let t0: number | null = null;
   for (const r of selected) {
-    const lat = r.gps_location?.latitude;
-    const lon = r.gps_location?.longitude;
+    const lat = r.gps_location?.lat;
+    const lon = r.gps_location?.lon;
     const t = parseUtcEpoch(r.timestamp_utc);
     if (lat === undefined || lon === undefined || t === null) continue;
     if (t0 === null) t0 = t;

@@ -49,7 +49,7 @@ describe('EVA firetruck alerts', () => {
     const behind = world.spawnFreeform({
       category: 'scenario',
       kind: 'truck',
-      blueprint: 'vehicle.carlamotors.firetruck',
+      blueprint: 'vehicle.firetruck',
       pose: { x: -15, z: 0, headingRad: 0 },
     });
     expect(behind.ok).toBe(true);
@@ -71,7 +71,7 @@ describe('EVA firetruck alerts', () => {
     const truck = world.spawnFreeform({
       category: 'scenario',
       kind: 'truck',
-      blueprint: 'vehicle.carlamotors.firetruck',
+      blueprint: 'vehicle.firetruck',
       pose: { x: 50, z: 50, headingRad: 0 }, // facing legacy east
     });
     expect(truck.ok).toBe(true);

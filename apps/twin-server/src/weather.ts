@@ -1,10 +1,7 @@
 /**
- * Weather: v1 message and clamping preserved verbatim
- * (drive_server.py DEFAULT_DRIVE_WEATHER / SAFE_WEATHER_LIMITS); the clamped
- * CARLA parameter set maps onto the engine's authored environment
- * (time-of-day from sun altitude/azimuth, weather label from
- * precipitation/fog/cloudiness). Keys with no engine counterpart are clamped
- * and echoed but have no scene effect — documented gap in twin-protocol-v2.md.
+ * Weather compatibility fields map onto the engine's authored environment.
+ * Keys without an engine counterpart are clamped and echoed without changing
+ * scene state.
  */
 
 export const DEFAULT_DRIVE_WEATHER: Record<string, number> = {
@@ -59,7 +56,7 @@ export interface AppliedEnvironment {
   readonly weather: 'clear' | 'cloudy' | 'rain' | 'fog';
 }
 
-/** Map the clamped CARLA parameter set onto the engine's authored environment. */
+/** Map clamped protocol weather fields onto the engine environment. */
 export function appliedEnvironment(safe: Record<string, number>): AppliedEnvironment {
   const altitude = safe['sun_altitude_angle'] ?? 75;
   const timeOfDay: AppliedEnvironment['timeOfDay'] =

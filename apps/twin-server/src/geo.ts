@@ -1,19 +1,11 @@
 /**
- * Coordinate plumbing. Three frames (see engine
- * docs/engineering/v2x-coordinate-contract.md):
- *  - WGS-84 lat/lon (wire: detections, zones, trajectories, cameras)
- *  - legacy flat-earth ("CARLA world"): x east, y = negated northing
- *  - scene (scene-state.v1): x east, z = negated northing, y up
- *
- * Numerically, scene {x, z} === flat-earth {x, y}: both negate the northing.
- * The v1 JSON protocol's `pos` arrays are flat-earth [x, y(, z=0)].
- *
- * Yaw: legacy CARLA yaw (degrees) = atan2(y_fe, x_fe) of the facing direction
- * = atan2(z_scene, x_scene). Empirically the engine's scene headingRad is the
- * mathematical angle in the (x, -z) plane, i.e. carlaYawDeg = -deg(sceneHeading).
+ * Coordinate plumbing between WGS-84, the map bundle's legacy flat-earth
+ * frame (x east, y negated northing), and scene-state coordinates (x east,
+ * z negated northing, y up). The JSON drive protocol uses flat-earth
+ * `[x, y, z?]` positions and clockwise yaw degrees.
  */
 import { readFileSync } from 'node:fs';
-import { LegacyFlatEarthFrame } from '@simforge/maps';
+import { LegacyFlatEarthFrame } from '@simforge-oss/maps';
 
 export interface SceneXZ {
   readonly x: number;
@@ -28,7 +20,7 @@ export function flatEarthFromXodr(xodrPath: string): LegacyFlatEarthFrame {
   return LegacyFlatEarthFrame.fromProjString(proj);
 }
 
-/** WGS-84 -> scene ground point (scene z equals the legacy CARLA y). */
+/** WGS-84 -> scene ground point. */
 export function sceneFromWgs84(frame: LegacyFlatEarthFrame, lat: number, lon: number): SceneXZ {
   const fe = frame.wgs84ToLocal(lat, lon);
   return { x: fe.x, z: fe.y };
@@ -39,14 +31,14 @@ export function wgs84FromScene(frame: LegacyFlatEarthFrame, p: SceneXZ): { lat: 
   return frame.localToWgs84(p.x, p.z);
 }
 
-/** Engine scene headingRad -> legacy CARLA yaw degrees. */
-export function carlaYawDegFromSceneHeading(sceneHeadingRad: number): number {
+/** Engine scene headingRad -> clockwise protocol yaw degrees. */
+export function legacyYawDegFromSceneHeading(sceneHeadingRad: number): number {
   const deg = (-sceneHeadingRad * 180) / Math.PI;
   return ((deg + 180) % 360 + 360) % 360 - 180;
 }
 
-/** Legacy CARLA yaw degrees -> engine scene headingRad. */
-export function sceneHeadingFromCarlaYawDeg(yawDeg: number): number {
+/** Clockwise protocol yaw degrees -> engine scene headingRad. */
+export function sceneHeadingFromLegacyYawDeg(yawDeg: number): number {
   return (-yawDeg * Math.PI) / 180;
 }
 

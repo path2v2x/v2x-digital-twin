@@ -32,7 +32,7 @@ interface CamerasFile {
 
 /**
  * A camera rig anchored to a map `SignalFeature` (a traffic-light pole), matching
- * `PoleCameraRig` in `@simforge/maps`. One pole carries many channels: the Richmond
+ * `PoleCameraRig` in `@simforge-oss/maps`. One pole carries many channels: the Richmond
  * mast holds all four at 7 m, differing only in bearing and pitch.
  *
  * `headingDeg` is a compass bearing and folds the mount bearing (`heading_deg`) and

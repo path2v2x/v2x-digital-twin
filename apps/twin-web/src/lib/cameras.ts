@@ -1,4 +1,4 @@
-import type { CityViewer } from '@simforge/viewer';
+import type { CityViewer } from '@simforge-oss/viewer';
 import { MathUtils, Vector3 } from 'three';
 import { wgs84ToLegacy } from './coordinates';
 

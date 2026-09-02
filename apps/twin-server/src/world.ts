@@ -18,8 +18,15 @@
  *    act timeline on structural rebuilds); the server advances one tick
  *    before accepting clients.
  */
-import { loadMap, buildMapControlPlan, type MapBundle } from '@simforge/compiler/node';
 import {
+  buildMapControlPlan,
+  normalizeDerivedMapIndex,
+  parseMapSignalCatalog,
+  topologyWithMapSpeedLimits,
+} from '@simforge-oss/compiler';
+import type { MapBundle } from '@simforge-oss/compiler/node';
+import {
+  buildLaneGraph,
   DEFAULT_ACTOR_DIMS,
   localFromScene,
   parseSimScenarioInput,
@@ -27,11 +34,12 @@ import {
   type Dims,
   type RouteSpec,
   type SimScenarioInput,
-} from '@simforge/engine';
-import { WorldSession, type SpawnRequest, type TruthSubscription, type WorldActorState } from '@simforge/training-env';
-import type { LegacyFlatEarthFrame } from '@simforge/maps';
-import { flatEarthFromXodr, sceneHeadingFromCarlaYawDeg, type SceneXZ } from './geo.js';
+} from '@simforge-oss/engine';
+import { WorldSession, type SpawnRequest, type TruthSubscription, type WorldActorState } from '@simforge-oss/training-env';
+import type { LegacyFlatEarthFrame } from '@simforge-oss/maps';
+import { flatEarthFromXodr, sceneHeadingFromLegacyYawDeg, type SceneXZ } from './geo.js';
 import path from 'node:path';
+import { gunzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
 import type { TwinConfig } from './config.js';
 
@@ -51,7 +59,7 @@ export interface ActorMeta {
   readonly kind: ActorKind;
   readonly blueprint: string;
   readonly name: string;
-  /** EVA participation: true for vehicle.carlamotors.firetruck spawns. */
+  /** EVA participation: true for firetruck spawns. */
   readonly firetruck: boolean;
   /** dynamic actors: moving circular geofence. */
   readonly geofenceRadiusM?: number;
@@ -67,7 +75,7 @@ export interface TruthSink {
 
 const FREEFORM_ROUTE_LENGTH_M = 10_000;
 
-/** Map a v1 CARLA blueprint id onto an engine actor kind. */
+/** Map a drive-protocol blueprint id onto an engine actor kind. */
 export function kindForBlueprint(blueprint: string): ActorKind {
   const bp = blueprint.toLowerCase();
   if (bp.startsWith('walker.')) return 'pedestrian';
@@ -117,9 +125,7 @@ export class TwinWorld {
   }
 
   static async create(config: TwinConfig): Promise<TwinWorld> {
-    // loadMap resolves dev-assets/<mapId>; point it at the bundle's parent.
-    process.env['SCEN_DEV_ASSETS'] = path.dirname(config.mapBundleDir);
-    const bundle = await loadMap(config.mapId);
+    const bundle = loadTwinMap(config.mapId, config.mapBundleDir);
     const frame = flatEarthFromXodr(path.join(config.mapBundleDir, 'map.xodr'));
     const plan = buildMapControlPlan({
       index: bundle.index,
@@ -408,10 +414,34 @@ export class TwinWorld {
     return out;
   }
 
-  /** Convenience for scene pose from a carla-frame spawn (yaw degrees). */
-  poseFromCarla(x: number, y: number, yawDeg: number): { x: number; z: number; headingRad: number } {
-    return { x, z: y, headingRad: sceneHeadingFromCarlaYawDeg(yawDeg) };
+  /** Convert a drive-protocol flat-earth pose into scene coordinates. */
+  poseFromLegacy(x: number, y: number, yawDeg: number): { x: number; z: number; headingRad: number } {
+    return { x, z: y, headingRad: sceneHeadingFromLegacyYawDeg(yawDeg) };
   }
+}
+
+function readJsonArtifact(file: string): unknown {
+  const bytes = readFileSync(file);
+  const plain = bytes[0] === 0x1f && bytes[1] === 0x8b ? gunzipSync(bytes) : bytes;
+  return JSON.parse(plain.toString('utf8')) as unknown;
+}
+
+function loadTwinMap(mapId: string, bundleDir: string): MapBundle {
+  const xodr = readFileSync(path.join(bundleDir, 'map.xodr'), 'utf8');
+  const rawTopology = readJsonArtifact(path.join(bundleDir, 'topology-index.json.gz')) as Parameters<typeof topologyWithMapSpeedLimits>[0];
+  const derived = readJsonArtifact(path.join(bundleDir, 'derived', 'topology-derived.json.gz')) as MapBundle['derived'];
+  const catalog = readJsonArtifact(path.join(bundleDir, 'derived', 'locations.json.gz')) as MapBundle['catalog'];
+  const signals = readJsonArtifact(path.join(bundleDir, 'signals.geojson.gz')) as Parameters<typeof parseMapSignalCatalog>[1];
+  const signalCatalog = parseMapSignalCatalog(xodr, signals);
+  const topology = topologyWithMapSpeedLimits(rawTopology, signalCatalog);
+  const normalizeOptions: NonNullable<Parameters<typeof normalizeDerivedMapIndex>[1]> = {
+    mapId,
+    topology: topology as NonNullable<NonNullable<Parameters<typeof normalizeDerivedMapIndex>[1]>['topology']>,
+    locations: catalog,
+  };
+  const index = normalizeDerivedMapIndex(derived, normalizeOptions);
+  const graph = buildLaneGraph(topology);
+  return { mapId, catalog, derived, topology, index, graph, signalCatalog };
 }
 
 function world0Sha(bundle: MapBundle): string {

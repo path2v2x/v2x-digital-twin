@@ -4,7 +4,7 @@
  * One DriveSession per WebSocket connection; request/response JSON plus the
  * connection-wide binary truth_frame relay (wired in server.ts).
  */
-import type { ActorKind } from '@simforge/engine';
+import type { ActorKind } from '@simforge-oss/engine';
 import {
   evaProximityAlerts,
   evaYieldAlerts,
@@ -14,7 +14,7 @@ import {
   type V2xZone,
 } from './alerts.js';
 import type { TwinConfig } from './config.js';
-import { carlaYawDegFromSceneHeading, planarDist, sceneFromWgs84 } from './geo.js';
+import { legacyYawDegFromSceneHeading, planarDist, sceneFromWgs84 } from './geo.js';
 import { parseUtcEpoch, type DetectionRecord } from './ghosts.js';
 import type { ScenarioStore, PlacedObject } from './scenarios.js';
 import type { TrafficController } from './traffic.js';
@@ -39,7 +39,7 @@ const VEHICLE_BLUEPRINTS: ReadonlyArray<{ id: string; name: string; wheels: numb
   { id: 'vehicle.dodge.charger', name: 'Dodge Charger', wheels: 4 },
   { id: 'vehicle.nissan.patrol', name: 'Nissan Patrol', wheels: 4 },
   { id: 'vehicle.mini.cooper', name: 'Mini Cooper', wheels: 4 },
-  { id: 'vehicle.carlamotors.firetruck', name: 'Carlamotors Firetruck', wheels: 4 },
+  { id: 'vehicle.firetruck', name: 'Firetruck', wheels: 4 },
   { id: 'vehicle.mercedes.sprinter', name: 'Mercedes Sprinter', wheels: 4 },
   { id: 'vehicle.volkswagen.t2', name: 'Volkswagen T2', wheels: 4 },
   { id: 'vehicle.kawasaki.ninja', name: 'Kawasaki Ninja', wheels: 2 },
@@ -210,7 +210,7 @@ export class DriveSession {
       case 'stop_xosc_scenario':
         return {
           type: 'error',
-          message: 'OpenSCENARIO execution was retired with CARLA; use list_scenarios/load_scenario (engine templates)',
+          message: 'OpenSCENARIO execution is unsupported; use list_scenarios/load_scenario (engine templates)',
         };
       case 'list_trajectories':
         return { type: 'trajectory_list', trajectories: this.deps.trajectories.listFiles(), status: this.deps.trajectories.status() };
@@ -267,8 +267,8 @@ export class DriveSession {
         latestByObject.set(record.object_id, record);
       }
       for (const record of latestByObject.values()) {
-        const lat = record.gps_location?.latitude;
-        const lon = record.gps_location?.longitude;
+        const lat = record.gps_location?.lat;
+        const lon = record.gps_location?.lon;
         if (lat === undefined || lon === undefined) continue;
         const objectType = record.object_type ?? 'car';
         const kind: ActorKind = objectType === 'person' ? 'pedestrian' : kindForBlueprint(`vehicle.${objectType}`);
@@ -343,7 +343,7 @@ export class DriveSession {
         nearby.push({
           id: state.id,
           pos: [Math.round(state.x * 100) / 100, Math.round(state.z * 100) / 100],
-          yaw: Math.round(carlaYawDegFromSceneHeading(state.headingRad) * 10) / 10,
+          yaw: Math.round(legacyYawDegFromSceneHeading(state.headingRad) * 10) / 10,
           type: meta?.category === 'dynamic' ? 'dynamic' : meta?.category === 'traffic' ? 'traffic' : 'other',
         });
       }
@@ -360,7 +360,7 @@ export class DriveSession {
           0,
         ],
         speed_mps: Math.round(state.speedMps * 100) / 100,
-        yaw: Math.round(carlaYawDegFromSceneHeading(heading) * 10) / 10,
+        yaw: Math.round(legacyYawDegFromSceneHeading(heading) * 10) / 10,
       });
     }
     detections.sort((a, b) => Number(a['distance']) - Number(b['distance']));
@@ -384,7 +384,7 @@ export class DriveSession {
       speed: Math.round(ego.speedMps * 3.6 * 10) / 10,
       gear: reverse ? -1 : 1,
       pos: [Math.round(ego.x * 100) / 100, Math.round(ego.z * 100) / 100, 0],
-      rot: [0, Math.round(carlaYawDegFromSceneHeading(ego.headingRad) * 100) / 100, 0],
+      rot: [0, Math.round(legacyYawDegFromSceneHeading(ego.headingRad) * 100) / 100, 0],
       steer: Math.round(steer * 1000) / 1000,
       throttle: Math.round(throttle * 1000) / 1000,
       brake: Math.round(brake * 1000) / 1000,
@@ -462,7 +462,7 @@ export class DriveSession {
         snappedToRoad = false;
       }
       const ego = world.actorState(this.egoId!);
-      let yawDeg = ego ? carlaYawDegFromSceneHeading(ego.headingRad) : 0;
+      let yawDeg = ego ? legacyYawDegFromSceneHeading(ego.headingRad) : 0;
       if (msg['yaw'] !== undefined && msg['yaw'] !== null) {
         const yaw = finite(msg['yaw'], 'yaw');
         if (Math.abs(yaw) > TELEPORT_MAX_ABS_YAW_DEG) {
@@ -472,7 +472,7 @@ export class DriveSession {
       }
 
       world.despawn(this.egoId!);
-      const pose = world.poseFromCarla(x, y, yawDeg);
+      const pose = world.poseFromLegacy(x, y, yawDeg);
       const spawned = world.spawnFreeform({
         category: 'ego',
         kind: 'car',
@@ -490,7 +490,7 @@ export class DriveSession {
         success: true,
         request_id: requestId,
         pos: [Math.round(state.x * 100) / 100, Math.round(state.z * 100) / 100, 0],
-        yaw: Math.round(carlaYawDegFromSceneHeading(state.headingRad) * 100) / 100,
+        yaw: Math.round(legacyYawDegFromSceneHeading(state.headingRad) * 100) / 100,
         snapped_to_road: snappedToRoad,
         vehicle_id: spawned.id,
       };
@@ -581,7 +581,7 @@ export class DriveSession {
     });
     if (!result.ok) throw new Error(`Failed to spawn ${blueprint} — ${result.error}`);
     const pos: [number, number, number] = [Math.round(pose.x * 100) / 100, Math.round(pose.z * 100) / 100, 0];
-    const yaw = Math.round(carlaYawDegFromSceneHeading(pose.headingRad) * 100) / 100;
+    const yaw = Math.round(legacyYawDegFromSceneHeading(pose.headingRad) * 100) / 100;
     this.placedObjects.push({ actorId: result.id, blueprint, pos, yaw });
     return { type: 'object_spawned', actor_id: result.id, blueprint, pos, placed_count: this.placedObjects.length };
   }
@@ -630,7 +630,7 @@ export class DriveSession {
       blueprint: meta?.blueprint ?? '',
       name: meta?.name ?? '',
       pos: [Math.round(x * 100) / 100, Math.round(z * 100) / 100, 0],
-      yaw: Math.round(carlaYawDegFromSceneHeading(headingRad) * 10) / 10,
+      yaw: Math.round(legacyYawDegFromSceneHeading(headingRad) * 10) / 10,
       geofence_radius: meta?.geofenceRadiusM ?? 0,
       message: meta?.geofenceMessage ?? '',
       autopilot: true,
@@ -700,7 +700,7 @@ export class DriveSession {
     let failed = 0;
     for (const obj of placement.objects) {
       const kind = kindForBlueprint(obj.blueprint);
-      const pose = this.deps.world.poseFromCarla(obj.pos[0], obj.pos[1], obj.yaw);
+      const pose = this.deps.world.poseFromLegacy(obj.pos[0], obj.pos[1], obj.yaw);
       const result = this.deps.world.spawn({
         category: 'placed',
         kind,

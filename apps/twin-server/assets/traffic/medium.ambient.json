@@ -22,7 +22,7 @@
   "seed": "v2x-medium",
   "radiusM": 250,
   "exclusionRadiusM": 12,
-  "_v2xCarlaSource": {
+  "_sourceProfile": {
     "drive_server.py TRAFFIC_PRESETS.medium": {
       "vehicles": 60,
       "speed_diff": 10,

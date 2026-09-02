@@ -3,7 +3,7 @@
  * interpolation toward the next fix, 12 s expiry, and TruthFrame presence.
  */
 import { describe, expect, it } from 'vitest';
-import { TruthStreamClient, type TruthFrame } from '@simforge/training-env';
+import { TruthStreamClient, type TruthFrame } from '@simforge-oss/training-env';
 import { GhostMirror, type DetectionRecord } from '../src/ghosts.js';
 import { wgs84FromScene } from '../src/geo.js';
 import { testWorld } from './helpers.js';
@@ -14,7 +14,7 @@ function detection(world: TwinWorld, objectId: string, x: number, z: number, ext
   return {
     object_id: objectId,
     object_type: 'car',
-    gps_location: { latitude: gps.lat, longitude: gps.lon },
+    gps_location: { lat: gps.lat, lon: gps.lon },
     confidence: 0.9,
     ...extra,
   };
@@ -85,7 +85,7 @@ describe('ghost lifecycle', () => {
       [
         detection(world, 'bike-1', 5, 5, { object_type: 'bicycle' }),
         { object_id: 'no-gps', object_type: 'car' },
-        { object_id: '', object_type: 'car', gps_location: { latitude: 37.9155, longitude: -122.3335 } },
+        { object_id: '', object_type: 'car', gps_location: { lat: 37.9155, lon: -122.3335 } },
       ],
       1_000,
     );

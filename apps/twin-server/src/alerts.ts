@@ -4,7 +4,7 @@
  * `_check_yield_to_firetruck`), polygon-zone entry and dynamic-actor
  * circular geofences. Pure geometry over scene/flat-earth coordinates.
  */
-import type { LegacyFlatEarthFrame } from '@simforge/maps';
+import type { LegacyFlatEarthFrame } from '@simforge-oss/maps';
 import { pointInPolygon, sceneFromWgs84, type SceneXZ } from './geo.js';
 import type { TwinWorld } from './world.js';
 

@@ -1,7 +1,6 @@
 /**
- * TwinSync — mode/replay orchestration over the GhostMirror plus the two
- * pollers (local perception at 1 s, cloud API at 5 s; both DEFAULT OFF) and
- * recorded-detections replay.
+ * TwinSync — local detection polling and recorded-detection replay over the
+ * GhostMirror.
  *
  * Replay clock math is the verbatim twin_sync.py contract:
  *   clock = start + (wallNow − wall0) × speed,  speed ∈ [0.25, 8].
@@ -79,7 +78,7 @@ export class TwinSync {
   }
 
   get replaySupported(): boolean {
-    return this.recorded.length > 0 || this.config.syncCloud;
+    return this.recorded.length > 0;
   }
 
   currentMode(): TwinMode {
@@ -110,9 +109,6 @@ export class TwinSync {
     if (this.config.syncLocal) {
       this.timers.push(setInterval(() => void this.pollLocal(), this.config.localPollIntervalS * 1000));
     }
-    if (this.config.syncCloud) {
-      this.timers.push(setInterval(() => void this.pollCloud(), this.config.cloudPollIntervalS * 1000));
-    }
     // Replay stepping shares the local poll cadence, mirroring twin_sync.run().
     this.timers.push(setInterval(() => this.stepReplay(), this.config.localPollIntervalS * 1000));
   }
@@ -124,7 +120,7 @@ export class TwinSync {
     this.mirror.clear();
   }
 
-  /** Local perception summaries: flatten fresh per-camera detections (v1 _fetch_detections). */
+  /** Flatten fresh detections from the local co-perception contract. */
   private async pollLocal(): Promise<void> {
     if (this.mode !== 'live' || this.stopped) return;
     try {
@@ -137,7 +133,7 @@ export class TwinSync {
       if (cameras && typeof cameras === 'object') {
         for (const camera of Object.values(cameras)) {
           if (!camera || typeof camera !== 'object') continue;
-          const updated = 'updated_at' in camera ? parseUtcEpoch(camera.updated_at) : null;
+          const updated = 'ts' in camera && typeof camera.ts === 'number' ? camera.ts : null;
           if (updated === null) continue;
           const age = now - updated;
           if (age < -5 || age > 8) continue;
@@ -155,32 +151,6 @@ export class TwinSync {
     }
   }
 
-  /** Cloud detections API: 300 s stale drop at ingest (v1 v2x_poller ages). */
-  private async pollCloud(): Promise<void> {
-    if (this.mode !== 'live' || this.stopped) return;
-    try {
-      const url = new URL(this.config.cloudApiUrl);
-      url.searchParams.set('limit', String(this.config.cloudLimit));
-      const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload: unknown = await response.json();
-      const items = payload && typeof payload === 'object' && 'items' in payload && Array.isArray(payload.items)
-        ? (payload.items as DetectionRecord[])
-        : [];
-      const now = Date.now() / 1000;
-      const fresh = items.filter((r) => {
-        const t = parseUtcEpoch(r.timestamp_utc);
-        return t !== null && now - t <= this.config.cloudStaleSeconds;
-      });
-      this.pollFailures = 0;
-      if (this.mode === 'live') {
-        this.mirror.ingest(fresh, now, { lerpDuration: this.config.cloudPollIntervalS });
-      }
-    } catch {
-      this.pollFailures += 1;
-      this.mirror.expire(Date.now() / 1000);
-    }
-  }
 
   startReplay(startEpoch: number, speed: number): void {
     if (!this.replaySupported) throw new Error('Replay unavailable: no recorded detections and no range fetcher');

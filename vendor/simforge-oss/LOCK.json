@@ -1,0 +1,13 @@
+{
+  "ref": "v0.1.0-rc.60",
+  "commit": "be6e51503c09217ed73ef2b0b2fa06841159e29e",
+  "packages": {
+    "@simforge-oss/engine": "0.1.0-rc.60",
+    "@simforge-oss/compiler": "0.1.0-rc.60",
+    "@simforge-oss/maps": "0.1.0-rc.60",
+    "@simforge-oss/training-env": "0.1.0-rc.60",
+    "@simforge-oss/viewer": "0.1.0-rc.60",
+    "@simforge-oss/asset-catalog": "0.1.0-rc.60",
+    "@simforge-oss/scenario": "0.1.0-rc.60"
+  }
+}

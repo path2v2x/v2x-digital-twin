@@ -1,17 +1,9 @@
 /**
- * MJPEG camera feeds: GET /streams/ch{1..4}.mjpg — multipart JPEG streaming.
- *
- * Source per channel, in preference order:
- *  1. LIVE — the real Richmond site camera via Kinesis Video Streams HLS
- *     (stream `<prefix><channel>`, resolved with the aws CLI; the session URL
- *     expires so ffmpeg exit simply triggers a fresh resolve+relaunch).
- *  2. REPLAY fallback — the recorded site footage looped with a per-channel
- *     crop, used when live resolution fails; a timer periodically retries live.
- *
- * One ffmpeg per channel decodes into an MJPEG pipe; the HTTP layer holds only
- * the latest JPEG per channel and writes it to every client at the configured fps.
+ * MJPEG camera feeds from one local stream per channel, with recorded footage
+ * as a fallback. TWIN_CAMERA_URL_TEMPLATE supplies the ffmpeg input URL and
+ * substitutes `{channel}` with ch1..ch4. RTSP inputs use TCP transport.
  */
-import { spawn, execFile, type ChildProcessByStdio } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 import { WebSocket } from 'ws';
@@ -46,7 +38,8 @@ const MODE_CODE: Record<FeedMode, number> = {
 interface MultiplexSocket {
   readonly readyState: number;
   readonly bufferedAmount: number;
-  send(data: Buffer | string, options?: { binary?: boolean }): void;
+  send(data: Buffer | string): void;
+  send(data: Buffer, options: { binary?: boolean }): void;
   on(event: 'close', listener: () => void): unknown;
 }
 
@@ -116,9 +109,7 @@ function stateMessage(modes: Readonly<Record<string, FeedMode>>): string {
 }
 
 export interface LiveFeedConfig {
-  readonly streamPrefix: string;
-  readonly region: string;
-  readonly profile: string;
+  readonly urlTemplate: string;
 }
 
 interface ChannelState {
@@ -130,10 +121,10 @@ interface ChannelState {
   mode: FeedMode;
   targetMode: Exclude<FeedMode, 'starting'> | null;
   liveRetryTimer: NodeJS.Timeout | null;
+  liveUnavailableUntil: number;
 }
 
 const LIVE_RETRY_MS = 5 * 60 * 1000;
-const HLS_EXPIRES_S = 43_200;
 
 export class MjpegService {
   private readonly footage: string;
@@ -144,7 +135,6 @@ export class MjpegService {
   private stopped = false;
 
   private readonly live: LiveFeedConfig | null;
-  private readonly endpointCache = new Map<Channel, string>();
 
   constructor(footage: string, fps: number, live: LiveFeedConfig | null = null) {
     this.footage = footage;
@@ -161,59 +151,38 @@ export class MjpegService {
 
   start(): void {
     for (const channel of CHANNELS) {
-      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, revision: 0, clients: new Set(), mode: 'starting', targetMode: null, liveRetryTimer: null };
+      const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, revision: 0, clients: new Set(), mode: 'starting', targetMode: null, liveRetryTimer: null, liveUnavailableUntil: 0 };
       this.channels.set(channel, state);
       void this.launch(channel, state);
     }
     this.pushTimer = setInterval(() => this.pushFrames(), 1000 / this.fps);
   }
 
-  private awsCli(args: string[]): Promise<string> {
-    const { promise, resolve, reject } = Promise.withResolvers<string>();
-    execFile('aws', args, { env: { ...process.env, AWS_PROFILE: this.live!.profile }, timeout: 15_000 }, (error, stdout) => {
-      if (error) reject(error); else resolve(stdout.trim());
-    });
-    return promise;
-  }
 
-  /** Resolve a fresh KVS HLS session URL for the channel's live camera stream. */
-  private async resolveHlsUrl(channel: Channel): Promise<string> {
-    const { streamPrefix, region } = this.live!;
-    const streamName = `${streamPrefix}${channel}`;
-    let endpoint = this.endpointCache.get(channel);
-    if (!endpoint) {
-      endpoint = await this.awsCli(['kinesisvideo', 'get-data-endpoint', '--stream-name', streamName, '--api-name', 'GET_HLS_STREAMING_SESSION_URL', '--region', region, '--query', 'DataEndpoint', '--output', 'text']);
-      this.endpointCache.set(channel, endpoint);
-    }
-    return this.awsCli(['kinesis-video-archived-media', 'get-hls-streaming-session-url', '--endpoint-url', endpoint, '--stream-name', streamName, '--playback-mode', 'LIVE', '--expires', String(HLS_EXPIRES_S), '--region', region, '--query', 'HLSStreamingSessionURL', '--output', 'text']);
-  }
-
-  private async launch(channel: Channel, state: ChannelState): Promise<void> {
+  private launch(channel: Channel, state: ChannelState): void {
     if (this.stopped) return;
     if (state.liveRetryTimer) {
       clearTimeout(state.liveRetryTimer);
       state.liveRetryTimer = null;
     }
-    let args: string[];
-    let targetMode: Exclude<FeedMode, 'starting'>;
     state.mode = 'starting';
     state.targetMode = null;
     state.latest = null;
-    if (this.live) {
-      try {
-        const hlsUrl = await this.resolveHlsUrl(channel);
-        args = ['-hide_banner', '-loglevel', 'error', '-i', hlsUrl, '-vf', 'scale=640:480', '-r', String(this.fps), '-q:v', '7', '-f', 'mjpeg', 'pipe:1'];
-        targetMode = 'live';
-      } catch (error) {
-        console.warn(`[mjpeg] ${channel}: live feed unavailable (${String(error).slice(0, 120)}); falling back to recorded loop`);
-        this.endpointCache.delete(channel);
-        args = this.replayArgs(channel);
-        targetMode = 'replay';
-        state.liveRetryTimer = setTimeout(() => state.process?.kill('SIGTERM'), LIVE_RETRY_MS);
-      }
+
+    let args: string[];
+    let targetMode: Exclude<FeedMode, 'starting'>;
+    if (this.live && Date.now() >= state.liveUnavailableUntil) {
+      const inputUrl = this.live.urlTemplate.replaceAll('{channel}', channel);
+      const transport = inputUrl.toLowerCase().startsWith('rtsp://') ? ['-rtsp_transport', 'tcp'] : [];
+      args = ['-hide_banner', '-loglevel', 'error', ...transport, '-i', inputUrl, '-vf', 'scale=640:480', '-r', String(this.fps), '-q:v', '7', '-f', 'mjpeg', 'pipe:1'];
+      targetMode = 'live';
     } else {
       args = this.replayArgs(channel);
       targetMode = 'replay';
+      if (this.live) {
+        const delay = Math.max(1, state.liveUnavailableUntil - Date.now());
+        state.liveRetryTimer = setTimeout(() => state.process?.kill('SIGTERM'), delay);
+      }
     }
     state.targetMode = targetMode;
     if (this.stopped) return;
@@ -242,6 +211,7 @@ export class MjpegService {
       if (state.buffer.length > 8 * 1024 * 1024) state.buffer = Buffer.alloc(0);
     });
     child.on('exit', () => {
+      if (targetMode === 'live') state.liveUnavailableUntil = Date.now() + LIVE_RETRY_MS;
       state.latest = null;
       state.mode = 'starting';
       state.targetMode = null;

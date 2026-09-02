@@ -3,7 +3,7 @@ import { extname, join, normalize } from 'node:path';
 import react from '@vitejs/plugin-react';
 import { defineConfig, type Plugin } from 'vite';
 
-const MAP_BUNDLE = process.env.SIMFORGE_MAP_BUNDLE ?? '/home/path/simforge-assets/map-bundles/richmond-field-station';
+const MAP_BUNDLE = process.env.SIMFORGE_MAP_BUNDLE ?? '/home/path/simforge-oss/dev-assets/richmond-field-station';
 const MIME: Record<string, string> = {
   '.json': 'application/json', '.gz': 'application/gzip', '.glb': 'model/gltf-binary',
   '.ktx2': 'image/ktx2', '.webp': 'image/webp', '.xodr': 'application/xml',

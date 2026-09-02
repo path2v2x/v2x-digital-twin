@@ -12,7 +12,7 @@
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import type { ActorKind, RouteSpec } from '@simforge/engine';
+import type { ActorKind, RouteSpec } from '@simforge-oss/engine';
 import type { TwinConfig } from './config.js';
 import type { TwinWorld } from './world.js';
 
@@ -99,8 +99,8 @@ export class ScenarioStore {
 
   /**
    * Instantiate a migrated template into the live world. Returns spawned actor
-   * ids (session-owned). The firetruck role keeps its EVA identity via the
-   * vehicle.carlamotors.firetruck blueprint mapping.
+   * ids (session-owned). The firetruck role keeps its EVA identity through a
+   * stable firetruck blueprint mapping.
    */
   instantiateTemplate(file: string, ownerSession: string): { spawned: string[]; failed: number; failures: Array<{ role: string; reason: string }>; name: string; zones: unknown[] } {
     const template = JSON.parse(readFileSync(path.join(this.templatesDir, path.basename(file)), 'utf8')) as ScenarioTemplate;
@@ -111,7 +111,7 @@ export class ScenarioStore {
       const cls = role.actor?.class ?? 'car';
       const kind = KIND_BY_CLASS[cls] ?? 'car';
       const catalogId = role.actor?.catalogId ?? '';
-      const blueprint = catalogId === 'vehicle.fire_engine' ? 'vehicle.carlamotors.firetruck' : `template.${cls}`;
+      const blueprint = catalogId === 'vehicle.fire_engine' ? 'vehicle.firetruck' : `template.${cls}`;
       const position = role.pose?.position;
       if (!position || position.x === undefined || position.z === undefined) {
         failures.push({ role: role.label ?? role.id, reason: 'template role has no pose position' });

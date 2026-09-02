@@ -22,7 +22,7 @@
   "seed": "v2x-chaos",
   "radiusM": 250,
   "exclusionRadiusM": 12,
-  "_v2xCarlaSource": {
+  "_sourceProfile": {
     "drive_server.py TRAFFIC_PRESETS.chaos": {
       "vehicles": 180,
       "speed_diff": -20,
@@ -31,5 +31,5 @@
       "ignore_signs": 30
     }
   },
-  "_fidelityNote": "CARLA chaos requests 180 vehicles; ambient-traffic caps maxActors at 128 (schema max) \u2014 capped, documented as a fidelity gap"
+  "_fidelityNote": "The source profile requests 180 vehicles; ambient traffic caps maxActors at the schema maximum of 128"
 }

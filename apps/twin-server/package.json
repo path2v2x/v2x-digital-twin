@@ -3,20 +3,21 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "V2X digital-twin server on the SimForge engine: WS :8765 (/drive, /twin) + MJPEG camera feeds :8090. Replaces the CARLA digital_twin_bridge.",
+  "description": "SimForge OSS-native V2X digital-twin server with WebSocket truth/control and local camera feeds.",
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "postinstall": "node scripts/fix-engine-exports.mjs"
+    "test": "vitest run"
   },
   "dependencies": {
     "@msgpack/msgpack": "^3.1.3",
-    "@simforge/compiler": "file:/home/path/worktrees/twinserver-engine/packages/compiler",
-    "@simforge/engine": "file:/home/path/worktrees/twinserver-engine/packages/engine",
-    "@simforge/maps": "file:/home/path/worktrees/twinserver-engine/packages/maps",
-    "@simforge/training-env": "file:/home/path/worktrees/twinserver-engine/packages/training-env",
+    "@simforge-oss/asset-catalog": "file:../../vendor/simforge-oss/simforge-oss-asset-catalog-0.1.0-rc.60.tgz",
+    "@simforge-oss/compiler": "file:../../vendor/simforge-oss/simforge-oss-compiler-0.1.0-rc.60.tgz",
+    "@simforge-oss/engine": "file:../../vendor/simforge-oss/simforge-oss-engine-0.1.0-rc.60.tgz",
+    "@simforge-oss/maps": "file:../../vendor/simforge-oss/simforge-oss-maps-0.1.0-rc.60.tgz",
+    "@simforge-oss/scenario": "file:../../vendor/simforge-oss/simforge-oss-scenario-0.1.0-rc.60.tgz",
+    "@simforge-oss/training-env": "file:../../vendor/simforge-oss/simforge-oss-training-env-0.1.0-rc.60.tgz",
     "ws": "^8.18.0"
   },
   "devDependencies": {

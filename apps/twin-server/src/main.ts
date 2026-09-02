@@ -1,7 +1,6 @@
 /**
- * twin-server entrypoint: world + twin sync + publication + wire servers.
- * No CARLA anywhere; the world is a SimForge WorldSession on the
- * richmond-field-station bundle, ticked at 20 Hz.
+ * twin-server entrypoint: world, local detection sync, publication, and wire
+ * servers over the Richmond Field Station bundle.
  */
 import { loadConfig } from './config.js';
 import { Publisher } from './publication.js';
@@ -14,7 +13,7 @@ import { TwinWorld } from './world.js';
 
 const config = loadConfig();
 console.log('='.repeat(60));
-console.log('  V2X Digital Twin — SimForge twin-server');
+console.log('  V2X Digital Twin — SimForge OSS twin-server');
 console.log('='.repeat(60));
 console.log(`  Map      : ${config.mapId} (${config.mapBundleDir})`);
 
@@ -32,8 +31,8 @@ sync.start();
 publisher.start();
 const servers = startServers({ world, config, sync, traffic, trajectories, scenarios });
 
-console.log(`  Sync     : local=${config.syncLocal ? 'on' : 'off'} cloud=${config.syncCloud ? 'on' : 'off'} recorded=${config.recordedDetections}`);
-console.log(`  Publish  : ${config.publishDir}${config.s3Bucket ? ` (S3 bucket configured: ${config.s3Bucket})` : ' (local only)'}`);
+console.log(`  Sync     : local=${config.syncLocal ? 'on' : 'off'} recorded=${config.recordedDetections}`);
+console.log(`  Publish  : ${config.publishDir} (local only)`);
 const spawnStats = world.spawnPointStats();
 console.log(`  Spawn    : ${spawnStats.covered}/${spawnStats.total} road points inside streamed tile coverage (ego prefers covered)`);
 console.log('  Ready. Waiting for connections…');

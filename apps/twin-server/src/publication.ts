@@ -1,19 +1,6 @@
 /**
- * Publication (uplink.py + map_data.py port). Default target is the local
- * filesystem; S3 is used ONLY when TWIN_S3_BUCKET is explicitly set.
- *
- * Layout mirrors the v1 S3 keys:
- *   api/state.json            {objects, map, timestamp}   every 5 s
- *   api/map-data.json         {geo_ref, road_network}     hourly
- *   map_data/road_network.json  same payload at the v1 export key
- *
- * Per-object snapshot JPEGs (snapshots/{id}/latest.jpg) are OUT OF SCOPE in
- * v2 — the server renders no pixels; state objects publish snapshot_url null.
- *
- * Road network: v1 extracted CARLA road edges as GPS polylines. v2 walks the
- * bundle's lane polylines and converts through the legacy flat-earth inverse,
- * preserving the [[ [lat, lon], ... ], ...] shape (v1 emitted [lat, lon]
- * pairs via carla_to_gps).
+ * Local JSON publication for consumers that cannot use the WebSocket stream.
+ * State is written every configured interval and map geometry hourly.
  */
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -53,12 +40,6 @@ export class Publisher {
     const target = path.join(this.config.publishDir, relative);
     mkdirSync(path.dirname(target), { recursive: true });
     writeFileSync(target, JSON.stringify(payload, null, 2));
-    if (this.config.s3Bucket !== '') {
-      // S3 writes are opt-in only. Uploading requires AWS credentials and the
-      // aws CLI/SDK; deliberately not bundled — the deployment that sets
-      // TWIN_S3_BUCKET must also mount a sync job for var/publication.
-      console.warn('[publication] TWIN_S3_BUCKET is set but v2 ships local-only publication; sync var/publication externally.');
-    }
   }
 
   /** v1 build_state_snapshot: fresh registry objects + bridge status. */
@@ -75,8 +56,8 @@ export class Publisher {
       objects.push({
         object_id: track.objectId,
         object_type: track.objectType,
-        lat: record.gps_location?.latitude ?? gps?.lat ?? null,
-        lon: record.gps_location?.longitude ?? gps?.lon ?? null,
+        lat: record.gps_location?.lat ?? gps?.lat ?? null,
+        lon: record.gps_location?.lon ?? gps?.lon ?? null,
         confidence: record.confidence ?? record.confidence_score ?? null,
         street_name: record.street_name ?? null,
         timestamp_utc: record.timestamp_utc ?? null,
@@ -89,7 +70,7 @@ export class Publisher {
       objects,
       map: {
         status: 'connected',
-        engine: 'simforge',
+        engine: 'simforge-oss',
         objects_tracked: objects.length,
         state_source: this.sync.currentMode() === 'replay' ? 'recorded_replay' : 'twin_sync',
         last_heartbeat: new Date(nowS * 1000).toISOString().replace(/\.\d+Z$/, 'Z'),

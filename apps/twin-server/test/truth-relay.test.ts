@@ -6,7 +6,7 @@
  * wall-clock loop.
  */
 import { describe, expect, it } from 'vitest';
-import { TruthStreamClient } from '@simforge/training-env';
+import { TruthStreamClient } from '@simforge-oss/training-env';
 import { testWorld } from './helpers.js';
 
 describe('truth relay', () => {

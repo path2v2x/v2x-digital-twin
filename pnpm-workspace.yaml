@@ -1,0 +1,21 @@
+packages:
+  - apps/twin-server
+  - apps/twin-web
+
+overrides:
+  '@simforge-oss/asset-catalog': file:vendor/simforge-oss/simforge-oss-asset-catalog-0.1.0-rc.60.tgz
+  '@simforge-oss/compiler': file:vendor/simforge-oss/simforge-oss-compiler-0.1.0-rc.60.tgz
+  '@simforge-oss/engine': file:vendor/simforge-oss/simforge-oss-engine-0.1.0-rc.60.tgz
+  '@simforge-oss/maps': file:vendor/simforge-oss/simforge-oss-maps-0.1.0-rc.60.tgz
+  '@simforge-oss/scenario': file:vendor/simforge-oss/simforge-oss-scenario-0.1.0-rc.60.tgz
+  '@simforge-oss/training-env': file:vendor/simforge-oss/simforge-oss-training-env-0.1.0-rc.60.tgz
+  '@simforge-oss/viewer': file:vendor/simforge-oss/simforge-oss-viewer-0.1.0-rc.60.tgz
+
+
+allowBuilds:
+  '@parcel/watcher': true
+  '@swc/core': true
+  esbuild: true
+  lmdb: true
+  msgpackr-extract: true
+  sharp: true
