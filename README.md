@@ -57,6 +57,7 @@ Default ports are configurable:
 | `TWIN_HISTORY_RETENTION_HOURS` | `72` | history retention and replay window |
 | `TWIN_PUBLIC_HTTP_ORIGIN` | unset | public origin used to advertise absolute history URLs |
 | `TWIN_ARCHIVE_URL_TEMPLATE` | unset | archive MP4 template with `{channel}`, `{start}`, and `{duration}` placeholders |
+| `TWIN_ARCHIVE_OFFSET_SECONDS` | `0` | offset added to replay clip start times to map detection timestamps to archive timestamps |
 | `TWIN_CAMERA_URL_TEMPLATE` | `rtsp://127.0.0.1:8554/{channel}` | ffmpeg input URL template |
 | `TWIN_LIVE_FEEDS` | `1` | use local live camera inputs; set `0` for recorded replay only |
 
@@ -117,6 +118,7 @@ TWIN_HISTORY_DB=/var/lib/v2x-twin/detections.sqlite
 TWIN_HISTORY_RETENTION_HOURS=72
 TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
 TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=mp4
+TWIN_ARCHIVE_OFFSET_SECONDS=0
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 ```
 

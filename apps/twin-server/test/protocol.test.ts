@@ -272,6 +272,7 @@ describe('/twin round-trips', () => {
     expect(hello!['cameras']).toEqual(['ch1', 'ch2', 'ch3', 'ch4']);
     expect(hello!['replay']).toEqual({
       retention_hours: 72,
+      archive_offset_seconds: 0,
       archive_url_template: config.archiveUrlTemplate,
       coverage_url: `${config.publicHttpOrigin}/detections/coverage`,
       history_url: `${config.publicHttpOrigin}/detections/history`,

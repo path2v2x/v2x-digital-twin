@@ -54,6 +54,7 @@ export class TwinConnection {
       sync: this.sync.status(),
       replay: {
         retention_hours: this.config.historyRetentionHours,
+        archive_offset_seconds: this.config.archiveOffsetSeconds,
         ...replayUrls,
       },
     };

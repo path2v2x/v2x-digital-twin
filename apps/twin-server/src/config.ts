@@ -41,6 +41,7 @@ export interface TwinConfig {
   readonly historyRetentionHours: number;
   readonly publicHttpOrigin: string;
   readonly archiveUrlTemplate: string;
+  readonly archiveOffsetSeconds: number;
   readonly despawnAfterS: number;
   readonly publishDir: string;
   readonly publishStateIntervalS: number;
@@ -75,6 +76,7 @@ export function loadConfig(): TwinConfig {
     historyRetentionHours: num('TWIN_HISTORY_RETENTION_HOURS', 72),
     publicHttpOrigin: str('TWIN_PUBLIC_HTTP_ORIGIN', ''),
     archiveUrlTemplate: str('TWIN_ARCHIVE_URL_TEMPLATE', ''),
+    archiveOffsetSeconds: num('TWIN_ARCHIVE_OFFSET_SECONDS', 0),
     despawnAfterS: num('TWIN_DESPAWN_SECONDS', 12),
     publishDir: str('TWIN_PUBLISH_DIR', path.join(APP_ROOT, 'var', 'publication')),
     publishStateIntervalS: num('TWIN_PUBLISH_STATE_INTERVAL', 5),

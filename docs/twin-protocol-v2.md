@@ -32,6 +32,7 @@ and the replay discovery block:
   "type": "twin_hello",
   "replay": {
     "retention_hours": 72,
+    "archive_offset_seconds": 0,
     "archive_url_template": "https://example.test/archive/get?path={channel}&start={start}&duration={duration}&format=mp4",
     "coverage_url": "https://example.test/detections/coverage",
     "history_url": "https://example.test/detections/history"
@@ -42,7 +43,10 @@ and the replay discovery block:
 The three URLs are absolute and are all `null` when
 `TWIN_PUBLIC_HTTP_ORIGIN` is unset. `archive_url_template` comes from
 `TWIN_ARCHIVE_URL_TEMPLATE`; `{channel}`, `{start}`, and `{duration}` are
-client-substituted.
+client-substituted. `archive_offset_seconds` is the finite numeric
+`TWIN_ARCHIVE_OFFSET_SECONDS` value (default `0`). Clients add it to the
+detection-clock clip start when requesting archive footage; fractional values
+preserve subsecond precision.
 
 Send `{"type":"twin_replay","start":"<RFC3339 UTC>","speed":1}` to enter
 replay or seek while replaying. Speed `0` pauses; moving speeds are clamped to
