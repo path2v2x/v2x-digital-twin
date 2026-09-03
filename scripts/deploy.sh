@@ -110,7 +110,7 @@ if [ "$deploy_studio" = 1 ]; then
     remote_as_app "cd $STUDIO_CHECKOUT && pnpm install --frozen-lockfile --silent"
   fi
   # Workspace packages export built dist/ files under the production condition.
-  remote_as_app "cd $STUDIO_CHECKOUT && pnpm -r --filter ./packages/** build >/tmp/simforge-packages-build.log 2>&1 || (tail -40 /tmp/simforge-packages-build.log; exit 1)"
+  remote_as_app "cd $STUDIO_CHECKOUT && pnpm -r --filter \"./packages/**\" build >/tmp/simforge-packages-build.log 2>&1 || (tail -40 /tmp/simforge-packages-build.log; exit 1)"
   remote_as_app "cd $STUDIO_CHECKOUT && set -a && . $STUDIO_ENV && set +a && pnpm --filter @simforge-oss/studio build"
   remote "systemctl restart v2x-twin-studio"
   for _ in $(seq 1 60); do
