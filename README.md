@@ -122,23 +122,39 @@ TWIN_ARCHIVE_OFFSET_SECONDS=0
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 ```
 
-Install `scripts/systemd/v2x-twin-server.service` for the runtime. Its
-`StateDirectory=v2x-twin` creates `/var/lib/v2x-twin` owned by the `path`
+### Deploying
+
+```bash
+git push origin main
+scripts/deploy.sh                 # twin server, units, nginx vhost
+scripts/deploy.sh --perception    # also restart co-perception
+scripts/deploy.sh --studio        # also pull, build and restart the Studio UI
+scripts/deploy.sh --dry-run       # print the plan
+```
+
+The script fast-forwards `/home/path/v2x-digital-twin` to `origin/main`,
+installs `scripts/systemd/*.service`, `deploy/v2x-twin-studio.service` and
+`deploy/nginx-twin.conf`, restarts `v2x-twin-server` and checks
+`127.0.0.1:8190/health` plus the public `/detections/coverage` route.
+`--studio` fast-forwards the separate `SimForgeinc/simforge-oss` checkout at
+`/home/path/simforge-oss` (main), runs `pnpm --filter @simforge-oss/studio
+build` with `/etc/v2x-twin-studio.env` exported (its `NEXT_PUBLIC_*` values are
+inlined at build time) and restarts `v2x-twin-studio`, which serves the build
+with `next start` on loopback `:5199` after running migrations and seed.
+Rollback: check out the previous commit on `main`, push, redeploy.
+
+`v2x-twin-server.service` has `StateDirectory=v2x-twin`, which creates
+`/var/lib/v2x-twin` (the 72-hour detection history) owned by the `path`
 service user. The path-rfs co-perception process uses
-`config/perception/pipeline.yaml` and
-`scripts/systemd/v2x-perception.service`; installation, health checks, and
-measured resource use are documented in
+`config/perception/pipeline.yaml` and `scripts/systemd/v2x-perception.service`;
+installation, health checks, and measured resource use are documented in
 [docs/perception-on-path-rfs.md](docs/perception-on-path-rfs.md).
 
-The operator UI is a separate `SimForgeinc/simforge-oss` checkout at
-`/home/path/simforge-oss`; install `deploy/v2x-twin-studio.service` and copy
-`deploy/studio.env.example` to `/etc/v2x-twin-studio.env`.
 `deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, proxies health,
 camera streams, and `/detections/` to `:8190`, exposes MediaMTX playback under
 `/archive/`, serves the legacy map alias under `/map/`, and proxies Studio
-Drive to loopback `:5199`. The Studio service uses its development boot path
-because the current upstream production build cannot resolve the playback
-SUMO worker module; boot performs the required migrations and seed before
-starting Next.js.
+Drive to loopback `:5199`. First-time setup: copy `deploy/studio.env.example`
+to `/etc/v2x-twin-studio.env`, symlink the vhost into `sites-enabled`, then run
+`scripts/deploy.sh --perception --studio`.
 
 Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md). The Studio migration plan is in [docs/twin-on-studio-plan.md](docs/twin-on-studio-plan.md).

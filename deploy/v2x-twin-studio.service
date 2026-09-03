@@ -8,7 +8,7 @@ Type=simple
 User=path
 WorkingDirectory=/home/path/simforge-oss/studio
 EnvironmentFile=/etc/v2x-twin-studio.env
-ExecStart=/usr/bin/pnpm --filter @simforge-oss/studio dev
+ExecStart=/usr/bin/pnpm --filter @simforge-oss/studio start
 Restart=always
 RestartSec=5
 

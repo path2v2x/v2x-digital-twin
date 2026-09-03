@@ -78,9 +78,10 @@ output:
     enabled: true
     json_path: /var/lib/v2x-perception/multi_cam_detections.json
     video_path: null
+  # No cloud upload: the twin server records every detection locally (72 h).
   upload:
-    enabled: true
-    endpoint: https://w0j9m7dgpg.execute-api.us-west-1.amazonaws.com/detections
+    enabled: false
+    endpoint: ""
   # The annotated-frame Unix broadcast is not needed on path-rfs; disabling it
   # avoids colliding with another co-perception instance's default socket.
   broadcast:

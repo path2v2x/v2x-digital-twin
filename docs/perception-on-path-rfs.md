@@ -19,7 +19,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now v2x-perception.service
 ```
 
-The tracked configuration subscribes to the four world-connectable compressed-camera sockets with GPU decode, publishes latest calibrated detections only on `127.0.0.1:8091`, batches non-empty detection frames to the AWS write API, and reserves `/var/lib/v2x-perception` for the final JSON output. The annotated-frame broadcast is disabled so this process never claims `/tmp/coperception_output.sock`.
+The tracked configuration subscribes to the four world-connectable compressed-camera sockets with GPU decode, publishes latest calibrated detections only on `127.0.0.1:8091` (the twin server polls this at 10 Hz and records every frame to its 72-hour SQLite history; there is no cloud upload), and reserves `/var/lib/v2x-perception` for the final JSON output. The annotated-frame broadcast is disabled so this process never claims `/tmp/coperception_output.sock`.
 
 Useful checks:
 
@@ -42,7 +42,7 @@ A trimmed post-soak response was:
 
 All four calibrated capture clocks updated continuously. At this sample they were about 3.8 seconds behind wall time: approximately 2.6 seconds was upstream camera/demux latency and the remainder was inference/publication latency. Do not replace these capture timestamps with publication time.
 
-The campus was empty throughout the soak, so every camera returned an empty detection array and no non-empty AWS batch POST was generated. Consequently `/detections/recent?limit=3` still showed the prior 2026-09-01 record; a later visible car/person will produce an `Uploaded batch of ... detections.` journal line and a current API record.
+The campus was empty throughout the soak, so every camera returned an empty detection array. The first real detections (a pedestrian on ch2) were recorded by the twin server at 2026-09-03 16:28 UTC and are visible through `GET /detections/objects`.
 
 The 04:00 `v2x-nightly-restart` stops and starts only the CARLA container and `v2x-drive.service`; it does not stop the camera demux sockets or this service. CARLA releases its allocation before reacquiring it, and `Restart=always` recovers perception if an independent GPU/runtime failure occurs, so no extra restart ordering is required.
 
