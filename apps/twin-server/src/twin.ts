@@ -1,6 +1,6 @@
 /**
  * /twin connection handler — twin_hello + twin_cameras on connect, JSON
- * replay/live/status control, twin_clock every second. Binary truth_frame
+ * replay/live/status control, and mode-aware twin_clock cadence. Binary truth_frame
  * relay is wired by server.ts (shared with /drive).
  */
 import type { TwinConfig } from './config.js';

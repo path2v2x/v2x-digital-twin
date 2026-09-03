@@ -1,7 +1,7 @@
 /**
- * Wire layer: WebSocket :8765 (/drive, /twin) + HTTP :8090 (MJPEG feeds,
- * /health). Every WS connection gets the shared world's binary truth_frame
- * relay; JSON control is per-path.
+ * Wire layer: WebSocket control/truth/camera feeds plus HTTP health, MJPEG,
+ * and detection-history APIs. Every WS connection gets the shared world's
+ * binary truth-frame relay; JSON control is per-path.
  */
 import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
