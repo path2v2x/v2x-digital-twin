@@ -88,6 +88,10 @@ When `TWIN_SYNC_LOCAL=1`, `apps/twin-server/src/twinsync.ts` polls `GET $TWIN_DE
 
 ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min), so an upstream camera blip costs seconds of replay rather than minutes. Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`.
 
+## Pole camera rigs
+
+`config/drive-rigs/richmond.json` is the calibrated rig for RFS Mast 1 (signal feature 372): per channel heading, mount pitch, mount height, intrinsics and extrinsic corrections, in the shape Studio Drive's Cameras view consumes. It is the durable home for calibration: aim cameras in the Cameras view, use **Copy rig JSON**, and commit the result here. nginx serves it at `/drive-rigs/richmond.json` (see `deploy/nginx-twin.conf`), which is what `NEXT_PUBLIC_DRIVE_CAMERA_RIGS_URL` points at, so the deployed Studio always loads this file rather than its bundled dev fixture.
+
 ## path-rfs deployment
 
 On path-rfs the CARLA drive server (`path2v2x/v2x-drive`) owns `:8765`, and `:8090` was the retired perception service's port. The twin therefore runs there with:
