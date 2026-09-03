@@ -1,0 +1,21 @@
+[Unit]
+Description=V2X Co-Perception Pipeline
+After=network-online.target camera-pipeline.service
+Wants=network-online.target
+Requires=camera-pipeline.service
+
+[Service]
+Type=simple
+User=path
+Group=path
+WorkingDirectory=/home/path/co-perception
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/path/co-perception/.venv/bin/python scripts/process_video.py /home/path/v2x-digital-twin/config/perception/pipeline.yaml
+Restart=always
+RestartSec=15
+MemoryMax=20G
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

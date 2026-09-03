@@ -1,0 +1,92 @@
+# Production co-perception pipeline for path-rfs.
+show_live: false
+
+ingestion:
+  mode: gpu_decode
+  nominal_fps: 30
+  target_fps: 10
+  sync_buffer_seconds: 4
+  max_buffer_ahead_sec: 3.0
+  max_consecutive_skips: 5
+  sync_margin_sec: 1.0
+  channels:
+    - channel: 0
+      socket_path: /tmp/camera_demux_ch0.sock
+    - channel: 1
+      socket_path: /tmp/camera_demux_ch1.sock
+    - channel: 2
+      socket_path: /tmp/camera_demux_ch2.sock
+    - channel: 3
+      socket_path: /tmp/camera_demux_ch3.sock
+
+detection:
+  model_path: models/yolov8n.pt
+  conf: 0.5
+  imgsz: 1280
+  cameras:
+    - channel: 0
+      device_id: cam-001-ch1
+      K: [[1325.4, 0, 1280.0], [0, 1325.4, 960.0], [0, 0, 1]]
+      camera_height: 7.0
+      pitch_deg: -39.20
+      yaw_deg: -46.06
+      heading_deg: 200.0
+      origin_lat: 37.91560117034595
+      origin_lon: -122.33478756387032
+      city: Richmond
+      state: CA
+      country: USA
+    - channel: 1
+      device_id: cam-001-ch2
+      K: [[1325.4, 0, 1280.0], [0, 1325.4, 960.0], [0, 0, 1]]
+      camera_height: 7.0
+      pitch_deg: -40.52
+      yaw_deg: 71.25
+      heading_deg: 300.0
+      origin_lat: 37.91560117034595
+      origin_lon: -122.33478756387032
+      city: Richmond
+      state: CA
+      country: USA
+    - channel: 2
+      device_id: cam-001-ch3
+      K: [[1325.4, 0, 1280.0], [0, 1325.4, 960.0], [0, 0, 1]]
+      camera_height: 7.0
+      pitch_deg: -30.42
+      yaw_deg: 14.58
+      heading_deg: 315.0
+      origin_lat: 37.91560117034595
+      origin_lon: -122.33478756387032
+      city: Richmond
+      state: CA
+      country: USA
+    - channel: 3
+      device_id: cam-001-ch4
+      K: [[1325.4, 0, 1280.0], [0, 1325.4, 960.0], [0, 0, 1]]
+      camera_height: 7.0
+      pitch_deg: -43.48
+      yaw_deg: -22.63
+      heading_deg: 260.0
+      origin_lat: 37.91560117034595
+      origin_lon: -122.33478756387032
+      city: Richmond
+      state: CA
+      country: USA
+
+output:
+  save:
+    enabled: true
+    json_path: /var/lib/v2x-perception/multi_cam_detections.json
+    video_path: null
+  upload:
+    enabled: true
+    endpoint: https://w0j9m7dgpg.execute-api.us-west-1.amazonaws.com/detections
+  # The annotated-frame Unix broadcast is not needed on path-rfs; disabling it
+  # avoids colliding with another co-perception instance's default socket.
+  broadcast:
+    enabled: false
+    socket_path: /var/lib/v2x-perception/annotated.sock
+  http:
+    enabled: true
+    host: 127.0.0.1
+    port: 8091
