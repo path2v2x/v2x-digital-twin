@@ -34,6 +34,14 @@ export class TwinConnection {
     const cameras = buildTwinCameras(this.config, this.world.xodrSha256, host, feedModes);
     const cameraIds = cameras.cameras.map((c) => c.id);
     const camera = this.cameraId !== null ? cameras.cameras.find((c) => c.id === this.cameraId) ?? null : null;
+    const publicOrigin = this.config.publicHttpOrigin.replace(/\/+$/, '');
+    const replayUrls = publicOrigin === ''
+      ? { archive_url_template: null, coverage_url: null, history_url: null }
+      : {
+          archive_url_template: this.config.archiveUrlTemplate || null,
+          coverage_url: `${publicOrigin}/detections/coverage`,
+          history_url: `${publicOrigin}/detections/history`,
+        };
     const hello: Json = {
       type: 'twin_hello',
       camera_id: this.cameraId,
@@ -44,6 +52,10 @@ export class TwinConnection {
       cameras: cameraIds,
       rig: { width: 2560, height: 1920, fps: 1 / this.world.dt, cameras: cameraIds },
       sync: this.sync.status(),
+      replay: {
+        retention_hours: this.config.historyRetentionHours,
+        ...replayUrls,
+      },
     };
     return [hello, { ...cameras }];
   }
@@ -55,6 +67,7 @@ export class TwinConnection {
       mode: status.mode,
       replay_supported: status.replay_supported,
       replay_clock: status.replay_clock,
+      replay_speed: status.replay_speed,
       tracks: status.tracks,
     };
     if (includeObjects) {
@@ -89,11 +102,15 @@ export class TwinConnection {
         const startEpoch = parseUtcEpoch(msg['start']);
         if (startEpoch === null) return { type: 'twin_error', message: "twin_replay requires ISO 'start'" };
         const now = Date.now() / 1000;
-        if (startEpoch > now || now - startEpoch > 24 * 3600) {
-          return { type: 'twin_error', message: 'Replay start must be within the past 24 hours' };
+        if (startEpoch > now || now - startEpoch > this.config.historyRetentionHours * 3600) {
+          return {
+            type: 'twin_error',
+            message: `Replay start must be within the past ${this.config.historyRetentionHours} hours`,
+          };
         }
         try {
-          this.sync.startReplay(startEpoch, Number(msg['speed'] ?? 1) || 1);
+          const requestedSpeed = msg['speed'] === undefined ? 1 : Number(msg['speed']);
+          this.sync.startReplay(startEpoch, requestedSpeed);
         } catch (error) {
           return { type: 'twin_error', message: error instanceof Error ? error.message : String(error) };
         }

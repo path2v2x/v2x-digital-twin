@@ -8,11 +8,18 @@ Type=simple
 User=path
 Group=path
 WorkingDirectory=/home/path/v2x-digital-twin
+StateDirectory=v2x-twin
 Environment=NODE_ENV=production
+Environment=NODE_OPTIONS=--no-warnings=ExperimentalWarning
 Environment=TWIN_WS_PORT=8865
 Environment=TWIN_HTTP_PORT=8190
 Environment=TWIN_SYNC_LOCAL=1
 Environment=TWIN_DETECTIONS_URL=http://127.0.0.1:8091/detections/latest
+Environment=TWIN_POLL_HZ=10
+Environment=TWIN_HISTORY_DB=/var/lib/v2x-twin/detections.sqlite
+Environment=TWIN_HISTORY_RETENTION_HOURS=72
+Environment=TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
+Environment="TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=mp4"
 Environment=TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 ExecStart=/usr/bin/pnpm --dir apps/twin-server start
 Restart=always

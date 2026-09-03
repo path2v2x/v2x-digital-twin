@@ -101,4 +101,28 @@ describe('ghost lifecycle', () => {
     const meta = world.meta.get(track!.actorId!);
     expect(meta?.kind).toBe('pedestrian');
   });
+
+  it('uses detection time for replay expiry and holds actors still while paused', async () => {
+    const world = await testWorld();
+    const mirror = new GhostMirror(world, 12);
+    const replayEpoch = 1_756_000_000;
+    mirror.ingest([
+      detection(world, 'replay-car', 40, 40, { timestamp_utc: new Date(replayEpoch * 1000).toISOString() }),
+    ], replayEpoch, { useDetectionTs: true });
+    const track = mirror.tracks.get('replay-car')!;
+    mirror.setPaused(true);
+    const actorId = track.actorId!;
+    const before = world.actorState(actorId)!;
+    for (let step = 0; step < 40; step++) {
+      mirror.drive();
+      world.session.advance(1);
+    }
+    const after = world.actorState(actorId)!;
+    expect(after.x).toBeCloseTo(before.x, 3);
+    expect(after.z).toBeCloseTo(before.z, 3);
+    mirror.expire(replayEpoch + 12);
+    expect(mirror.tracks.has('replay-car')).toBe(true);
+    mirror.expire(replayEpoch + 12.1);
+    expect(mirror.tracks.has('replay-car')).toBe(false);
+  });
 });

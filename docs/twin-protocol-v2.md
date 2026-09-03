@@ -13,6 +13,8 @@
 | WebSocket | `ws://<host>:<TWIN_WS_PORT>/camera-feeds` | multiplexed binary JPEG frames plus feed-state JSON |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/health` | server, engine, mode, and per-channel feed status |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/streams/ch{1..4}.mjpg` | multipart MJPEG |
+| HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/coverage` | bucketed historical detection availability |
+| HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/history` | timestamp-ordered historical detections |
 
 The default ports are 8765 and 8090. `TWIN_WS_PORT` and `TWIN_HTTP_PORT` override them. path-rfs uses 8865 and 8190 because the drive application owns the default ports.
 
@@ -22,14 +24,39 @@ The server forwards binary scene-state truth from `@simforge-oss/training-env` w
 
 ## `/twin` JSON messages
 
-On connection the server sends metadata that includes:
+On connection, `twin_hello` includes map/camera metadata, current sync status,
+and the replay discovery block:
 
-- map identity and digest;
-- camera calibration and stream URLs;
-- current replay/live status;
-- server clock and feed states.
+```json
+{
+  "type": "twin_hello",
+  "replay": {
+    "retention_hours": 72,
+    "archive_url_template": "https://example.test/archive/get?path={channel}&start={start}&duration={duration}&format=mp4",
+    "coverage_url": "https://example.test/detections/coverage",
+    "history_url": "https://example.test/detections/history"
+  }
+}
+```
 
-A clock message follows once per second. Supported commands include live/replay switching, replay clock control, and camera or scenario-facing operations implemented by `TwinConnection`. Unknown commands return an error object and do not mutate the world.
+The three URLs are absolute and are all `null` when
+`TWIN_PUBLIC_HTTP_ORIGIN` is unset. `archive_url_template` comes from
+`TWIN_ARCHIVE_URL_TEMPLATE`; `{channel}`, `{start}`, and `{duration}` are
+client-substituted.
+
+Send `{"type":"twin_replay","start":"<RFC3339 UTC>","speed":1}` to enter
+replay or seek while replaying. Speed `0` pauses; moving speeds are clamped to
+0.25 through 8. Send `{"type":"twin_live"}` to return to live operation.
+Replay has one controlling connection, cannot begin during an active Drive
+session, and is limited to the configured retention window (72 hours by
+default).
+
+`twin_mode` and `twin_clock` include `mode`, `replay_supported`,
+`replay_clock`, `replay_speed`, and `tracks`. `replay_clock` is an RFC3339 UTC
+timestamp. Clock messages run at 4 Hz in replay and 1 Hz in live mode; a
+paused replay reports the same clock and `replay_speed: 0`. `twin_status`
+returns `twin_mode` with actor/object details. Unknown commands return
+`twin_error` without mutating the world.
 
 ## `/drive` JSON messages
 
@@ -41,7 +68,9 @@ OpenSCENARIO execution is not supported. `list_scenarios` and `load_scenario` op
 
 ## Local detections
 
-Set `TWIN_SYNC_LOCAL=1` to poll `GET $TWIN_DETECTIONS_URL` at `TWIN_POLL_INTERVAL` seconds. The response contract owned by `path2v2x/co-perception` is:
+Set `TWIN_SYNC_LOCAL=1` to poll `GET $TWIN_DETECTIONS_URL` at
+`TWIN_POLL_HZ` (10 Hz by default). The response contract owned by
+`path2v2x/co-perception` is:
 
 ```json
 {
@@ -61,13 +90,41 @@ Set `TWIN_SYNC_LOCAL=1` to poll `GET $TWIN_DETECTIONS_URL` at `TWIN_POLL_INTERVA
 }
 ```
 
-`ts` is epoch seconds. The server ignores camera summaries older than eight seconds or more than five seconds in the future. Accepted object types are `car`, `truck`, `bus`, and `person`; a detection without `object_id`, `gps_location.lat`, or `gps_location.lon` is ignored. Tracks expire after `TWIN_DESPAWN_SECONDS` without a fresh observation.
+`ts` is calibrated capture epoch seconds. The server ignores camera summaries
+older than eight seconds or more than five seconds in the future. Each
+accepted per-camera summary is transactionally persisted before its
+detections are flattened for live mirroring; `(camera, ts)` deduplicates
+repeated polls, including empty frames. Accepted mirror types are `car`,
+`truck`, `bus`, and `person`; a detection without `object_id`,
+`gps_location.lat`, or `gps_location.lon` is not stored or mirrored. Tracks
+expire after `TWIN_DESPAWN_SECONDS` without a fresh observation.
 
-The sync status object includes `tracks`, `actors`, `poll_failures`, `detections_url`, `mode`, `replay_supported`, `replay_clock`, and mirrored objects. A mirrored object exposes its current scene pose in `transform`.
+The sync status object includes `tracks`, `actors`, `poll_failures`,
+`detections_url`, `mode`, `replay_supported`, `replay_clock`,
+`replay_speed`, and mirrored objects. A mirrored object exposes its current
+scene pose in `transform`.
 
-## Recorded replay
+## Detection history and replay
 
-`TWIN_RECORDED_DETECTIONS` points to a JSON array or JSONL file of detection records using the same `gps_location.lat`/`gps_location.lon` shape. Replay speed is clamped to 0.25 through 8 times real time. Replay is available only when the recorded file contains data.
+`TWIN_HISTORY_DB` selects the SQLite database (default
+`/var/lib/v2x-twin/detections.sqlite`). It uses WAL mode, retains
+`TWIN_HISTORY_RETENTION_HOURS` (72 by default), and prunes every ten minutes.
+Replay support is advertised when the database opens. Replay queries
+timestamp-indexed history in chunks no wider than 30 seconds. Seeking resets
+the ghost tracks and reconstructs the requested instant; replay-time expiry
+uses the replay clock, and pause freezes both clock and ghosts.
+
+`GET /detections/history?start=<ISO>&end=<ISO>&limit=<n>` returns ascending
+items in the form `{ts,camera,object_id,object_type,confidence,lat,lon}` and
+`next`, the timestamp of the next unreturned item. The default limit is 1000
+and the maximum is 5000.
+
+`GET /detections/coverage?start=<ISO>&end=<ISO>&bucket=<seconds>` returns
+`{start,end,bucket_seconds,buckets}`. Each bucket contains
+`{start,detections,objects}`, including empty buckets. The default bucket is
+300 seconds, the minimum is 10 seconds, and requests over 2000 buckets return
+HTTP 400. Both history routes return JSON errors with HTTP 400 for invalid
+parameters.
 
 ## Camera feeds
 

@@ -6,7 +6,7 @@ SimForge-native digital twin for the Richmond Field Station V2X deployment. The 
 
 | Component | Responsibility | Default interface |
 |---|---|---|
-| `apps/twin-server` | SimForge OSS world, drive commands, truth publication, local detection mirroring, MJPEG relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/` |
+| `apps/twin-server` | SimForge OSS world, drive commands, truth publication, 72-hour detection history/replay, local detection mirroring, MJPEG relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/`, `/detections/` |
 | `apps/dev-console` | Low-level `/drive` protocol console | Vite development server |
 | SimForge Studio Drive | Operator interface from `SimForgeinc/simforge-oss` | HTTP `:5199`; connects through the public twin WebSocket routes |
 
@@ -48,10 +48,15 @@ Default ports are configurable:
 | Variable | Default | Purpose |
 |---|---:|---|
 | `TWIN_WS_PORT` | `8765` | `/twin`, `/drive`, and `/camera-feeds` WebSockets |
-| `TWIN_HTTP_PORT` | `8090` | health and MJPEG streams |
+| `TWIN_HTTP_PORT` | `8090` | health, MJPEG streams, and detection history APIs |
 | `TWIN_MAP_BUNDLE` | `assets/richmond-field-station/bundle` | logical map bundle: `map.xodr`, `topology-index.json.gz`, `signals.geojson.gz`, `derived/{topology-derived,locations}.json.gz` (no 3D tiles; produced by the simforge-oss map pipeline, see `derived/map-intel-build-receipt.json`) |
 | `TWIN_SYNC_LOCAL` | `0` | enable local detection polling |
-| `TWIN_DETECTIONS_URL` | `http://127.0.0.1:8090/detections/latest` | co-perception summary endpoint |
+| `TWIN_DETECTIONS_URL` | `http://127.0.0.1:8091/detections/latest` | co-perception summary endpoint |
+| `TWIN_POLL_HZ` | `10` | local summary polls per second |
+| `TWIN_HISTORY_DB` | `/var/lib/v2x-twin/detections.sqlite` | SQLite history database (`:memory:` is suitable for tests) |
+| `TWIN_HISTORY_RETENTION_HOURS` | `72` | history retention and replay window |
+| `TWIN_PUBLIC_HTTP_ORIGIN` | unset | public origin used to advertise absolute history URLs |
+| `TWIN_ARCHIVE_URL_TEMPLATE` | unset | archive MP4 template with `{channel}`, `{start}`, and `{duration}` placeholders |
 | `TWIN_CAMERA_URL_TEMPLATE` | `rtsp://127.0.0.1:8554/{channel}` | ffmpeg input URL template |
 | `TWIN_LIVE_FEEDS` | `1` | use local live camera inputs; set `0` for recorded replay only |
 
@@ -77,7 +82,13 @@ When `TWIN_SYNC_LOCAL=1`, `apps/twin-server/src/twinsync.ts` polls `GET $TWIN_DE
 }
 ```
 
-`ts` is epoch seconds. Camera summaries more than eight seconds old or more than five seconds in the future are ignored. Each accepted detection needs an `object_id` and `gps_location.lat`/`gps_location.lon`.
+`ts` is calibrated capture epoch seconds. Camera summaries more than eight
+seconds old or more than five seconds in the future are ignored. Every
+accepted camera frame is persisted once by `(camera, ts)` in
+`TWIN_HISTORY_DB`, including empty frames; each stored/mirrored detection
+needs an `object_id` and `gps_location.lat`/`gps_location.lon`. The history
+and coverage APIs are documented in
+[docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).
 
 ## Camera source contract
 
@@ -100,19 +111,32 @@ On path-rfs the CARLA drive server (`path2v2x/v2x-drive`) owns `:8765`, and `:80
 TWIN_WS_PORT=8865
 TWIN_HTTP_PORT=8190
 TWIN_SYNC_LOCAL=1
-TWIN_DETECTIONS_URL=http://127.0.0.1:8090/detections/latest
+TWIN_DETECTIONS_URL=http://127.0.0.1:8091/detections/latest
+TWIN_POLL_HZ=10
+TWIN_HISTORY_DB=/var/lib/v2x-twin/detections.sqlite
+TWIN_HISTORY_RETENTION_HOURS=72
+TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
+TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=mp4
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 ```
 
-Install `scripts/systemd/v2x-twin-server.service` for the runtime. The operator
-UI is a separate `SimForgeinc/simforge-oss` checkout at
+Install `scripts/systemd/v2x-twin-server.service` for the runtime. Its
+`StateDirectory=v2x-twin` creates `/var/lib/v2x-twin` owned by the `path`
+service user. The path-rfs co-perception process uses
+`config/perception/pipeline.yaml` and
+`scripts/systemd/v2x-perception.service`; installation, health checks, and
+measured resource use are documented in
+[docs/perception-on-path-rfs.md](docs/perception-on-path-rfs.md).
+
+The operator UI is a separate `SimForgeinc/simforge-oss` checkout at
 `/home/path/simforge-oss`; install `deploy/v2x-twin-studio.service` and copy
 `deploy/studio.env.example` to `/etc/v2x-twin-studio.env`.
-`deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, health and camera
-streams on `:8190`, the legacy map alias under `/map/`, and proxies the Studio
-Drive UI to loopback `:5199`. The Studio service uses its development boot path
-because the current upstream production build cannot resolve the playback SUMO
-worker module; boot performs the required migrations and seed before starting
-Next.js.
+`deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, proxies health,
+camera streams, and `/detections/` to `:8190`, exposes MediaMTX playback under
+`/archive/`, serves the legacy map alias under `/map/`, and proxies Studio
+Drive to loopback `:5199`. The Studio service uses its development boot path
+because the current upstream production build cannot resolve the playback
+SUMO worker module; boot performs the required migrations and seed before
+starting Next.js.
 
 Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md). The Studio migration plan is in [docs/twin-on-studio-plan.md](docs/twin-on-studio-plan.md).

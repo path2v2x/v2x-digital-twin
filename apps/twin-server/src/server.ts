@@ -10,6 +10,18 @@ import { DriveSession, type DriveDeps } from './drive.js';
 import { MjpegService } from './mjpeg.js';
 import { TwinConnection } from './twin.js';
 
+function jsonResponse(res: http.ServerResponse, status: number, payload: unknown): void {
+  res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+  res.end(JSON.stringify(payload));
+}
+
+function requiredEpochMs(url: URL, name: string): number {
+  const raw = url.searchParams.get(name);
+  const value = raw === null ? Number.NaN : Date.parse(raw);
+  if (!Number.isFinite(value)) throw new Error(`${name} must be an ISO timestamp`);
+  return value;
+}
+
 const WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
 
 export interface TwinServers {
@@ -48,9 +60,14 @@ export function startServers(deps: DriveDeps): TwinServers {
     if (route === '/twin') {
       const twin = new TwinConnection(world, sync, config, url.searchParams);
       for (const message of twin.helloMessages(host, mjpeg.modes())) ws.send(JSON.stringify(message));
+      let lastClockAt = 0;
       const clockTimer = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(twin.clockPayload()));
-      }, 1000);
+        const now = Date.now();
+        if (ws.readyState !== WebSocket.OPEN) return;
+        if (sync.currentMode() === 'live' && now - lastClockAt < 1000) return;
+        lastClockAt = now;
+        ws.send(JSON.stringify(twin.clockPayload()));
+      }, 250);
       ws.on('message', (data, isBinary) => {
         if (isBinary) return;
         ws.send(JSON.stringify(twin.handle(data.toString())));
@@ -111,16 +128,51 @@ export function startServers(deps: DriveDeps): TwinServers {
       }
       return;
     }
+    if (url.pathname === '/detections/coverage' || url.pathname === '/detections/history') {
+      if (!sync.history) {
+        jsonResponse(res, 503, { error: 'Detection history unavailable' });
+        return;
+      }
+      try {
+        const startMs = requiredEpochMs(url, 'start');
+        const endMs = requiredEpochMs(url, 'end');
+        if (endMs <= startMs) throw new Error('end must be after start');
+        if (url.pathname === '/detections/coverage') {
+          const rawBucket = url.searchParams.get('bucket');
+          const bucketSec = rawBucket === null ? 300 : Number(rawBucket);
+          if (!Number.isInteger(bucketSec) || bucketSec < 10) {
+            throw new Error('bucket must be an integer of at least 10 seconds');
+          }
+          const bucketCount = Math.ceil((endMs - startMs) / (bucketSec * 1000));
+          if (bucketCount > 2000) throw new Error('requested range exceeds 2000 buckets');
+          jsonResponse(res, 200, {
+            start: new Date(startMs).toISOString(),
+            end: new Date(endMs).toISOString(),
+            bucket_seconds: bucketSec,
+            buckets: sync.history.coverage(startMs, endMs, bucketSec),
+          });
+          return;
+        }
+        const rawLimit = url.searchParams.get('limit');
+        const requestedLimit = rawLimit === null ? 1000 : Number(rawLimit);
+        if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
+          throw new Error('limit must be a positive integer');
+        }
+        jsonResponse(res, 200, sync.history.range(startMs, endMs, Math.min(requestedLimit, 5000)));
+      } catch (error) {
+        jsonResponse(res, 400, { error: error instanceof Error ? error.message : String(error) });
+      }
+      return;
+    }
     if (url.pathname === '/health') {
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
-      res.end(JSON.stringify({ status: 'ok', engine: 'simforge-oss', mode: sync.currentMode(), feeds: mjpeg.modes() }));
+      jsonResponse(res, 200, { status: 'ok', engine: 'simforge-oss', mode: sync.currentMode(), feeds: mjpeg.modes() });
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: 'not found' }));
   });
   httpServer.listen(config.httpPort, () => {
-    console.log(`[twin-server] HTTP listening on :${config.httpPort} (/streams/ch1..4.mjpg, /health)`);
+    console.log(`[twin-server] HTTP listening on :${config.httpPort} (/streams/ch1..4.mjpg, /detections/*, /health)`);
   });
 
   return {

@@ -77,6 +77,7 @@ export class GhostMirror {
   readonly tracks = new Map<string, GhostTrack>();
   private readonly despawnAfterS: number;
   private lastActUpdate = 0;
+  private paused = false;
 
   constructor(world: TwinWorld, despawnAfterS: number) {
     this.world = world;
@@ -157,13 +158,26 @@ export class GhostMirror {
 
   private trySpawn(track: GhostTrack): void {
     const kind = KIND_BY_TYPE[track.objectType] ?? 'car';
-    const result = this.world.spawnFreeform({
-      category: 'ghost',
+    const pose = { x: track.target.x, z: track.target.z, headingRad: (-track.yawDeg * Math.PI) / 180 };
+    const common = {
+      category: 'ghost' as const,
       kind,
       blueprint: `twin.${track.objectType}`,
-      pose: { x: track.target.x, z: track.target.z, headingRad: (-track.yawDeg * Math.PI) / 180 },
       meta: { name: track.objectId },
-    });
+    };
+    const result = this.paused
+      ? this.world.spawn({
+          ...common,
+          spawn: {
+            kind,
+            pose,
+            speedMps: 0,
+            snapToLane: false,
+            static: true,
+            route: { kind: 'polyline' as const, points: [{ x: pose.x, z: pose.z }] },
+          },
+        })
+      : this.world.spawnFreeform({ ...common, pose });
     if (result.ok) {
       track.actorId = result.id;
       track.prev = { ...track.target };
@@ -171,8 +185,9 @@ export class GhostMirror {
     // Rejections (footprint overlap) retry on the next poll, as in v1.
   }
 
-  /** Per-tick driver: chase the current lerp point (called from world.onTick). */
+  /** Per-tick driver: chase the current target unless replay is paused. */
   drive(): void {
+    if (this.paused) return;
     const wallNow = Date.now() / 1000;
     if (wallNow - this.lastActUpdate < 0.2) return;
     this.lastActUpdate = wallNow;
@@ -191,6 +206,21 @@ export class GhostMirror {
       const timeLeft = Math.max(track.lerpStart + track.lerpDuration - wallNow, this.world.dt);
       const speed = Math.min(remaining / timeLeft, 25);
       this.world.actChase(track.actorId, track.target, speed);
+    }
+  }
+
+  setPaused(paused: boolean): void {
+    if (this.paused === paused) return;
+    this.paused = paused;
+    this.lastActUpdate = 0;
+    for (const track of this.tracks.values()) {
+      if (track.actorId) {
+        const state = this.world.actorState(track.actorId);
+        if (state) track.target = { x: state.x, z: state.z };
+        this.world.despawn(track.actorId);
+        track.actorId = null;
+      }
+      this.trySpawn(track);
     }
   }
 

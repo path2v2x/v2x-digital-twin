@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { APP_ROOT, REPO_ROOT, loadConfig, type TwinConfig } from '../src/config.js';
+import { REPO_ROOT, loadConfig, type TwinConfig } from '../src/config.js';
 import { TwinWorld } from '../src/world.js';
 
 /** Test config: unique ports + tmp publish dir, shipped assets. */
@@ -15,7 +15,9 @@ export function testConfig(overrides: Partial<TwinConfig> = {}): TwinConfig {
     userScenariosDir: mkdtempSync(path.join(tmpdir(), 'twin-scen-')),
     userTrajectoriesDir: mkdtempSync(path.join(tmpdir(), 'twin-traj-')),
     camerasJson: path.join(REPO_ROOT, 'config', 'cameras.json'),
-    recordedDetections: path.join(APP_ROOT, 'assets', 'recorded', 'event1.json'),
+    historyDb: ':memory:',
+    publicHttpOrigin: 'https://twin.example.test',
+    archiveUrlTemplate: 'https://twin.example.test/archive/get?path={channel}&start={start}&duration={duration}&format=mp4',
     ...overrides,
   };
 }

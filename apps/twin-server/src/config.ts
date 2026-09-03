@@ -36,8 +36,11 @@ export interface TwinConfig {
   readonly evaWarningDistanceM: number;
   readonly syncLocal: boolean;
   readonly detectionsUrl: string;
-  readonly localPollIntervalS: number;
-  readonly recordedDetections: string;
+  readonly pollHz: number;
+  readonly historyDb: string;
+  readonly historyRetentionHours: number;
+  readonly publicHttpOrigin: string;
+  readonly archiveUrlTemplate: string;
   readonly despawnAfterS: number;
   readonly publishDir: string;
   readonly publishStateIntervalS: number;
@@ -66,9 +69,12 @@ export function loadConfig(): TwinConfig {
     horizonSeconds: num('TWIN_HORIZON_SECONDS', 4 * 3600),
     evaWarningDistanceM: num('TWIN_EVA_WARNING_DISTANCE_M', 20),
     syncLocal: flag('TWIN_SYNC_LOCAL', false),
-    detectionsUrl: str('TWIN_DETECTIONS_URL', 'http://127.0.0.1:8090/detections/latest'),
-    localPollIntervalS: num('TWIN_POLL_INTERVAL', 1),
-    recordedDetections: str('TWIN_RECORDED_DETECTIONS', path.join(APP_ROOT, 'assets', 'recorded', 'event1.json')),
+    detectionsUrl: str('TWIN_DETECTIONS_URL', 'http://127.0.0.1:8091/detections/latest'),
+    pollHz: num('TWIN_POLL_HZ', 10),
+    historyDb: str('TWIN_HISTORY_DB', '/var/lib/v2x-twin/detections.sqlite'),
+    historyRetentionHours: num('TWIN_HISTORY_RETENTION_HOURS', 72),
+    publicHttpOrigin: str('TWIN_PUBLIC_HTTP_ORIGIN', ''),
+    archiveUrlTemplate: str('TWIN_ARCHIVE_URL_TEMPLATE', ''),
     despawnAfterS: num('TWIN_DESPAWN_SECONDS', 12),
     publishDir: str('TWIN_PUBLISH_DIR', path.join(APP_ROOT, 'var', 'publication')),
     publishStateIntervalS: num('TWIN_PUBLISH_STATE_INTERVAL', 5),

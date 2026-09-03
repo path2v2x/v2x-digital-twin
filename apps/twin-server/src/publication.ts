@@ -44,7 +44,7 @@ export class Publisher {
 
   /** v1 build_state_snapshot: fresh registry objects + bridge status. */
   publishState(): void {
-    const nowS = Date.now() / 1000;
+    const nowS = this.sync.clockNow();
     const objects: Array<Record<string, unknown>> = [];
     for (const track of this.sync.mirror.tracks.values()) {
       const record = track.record;

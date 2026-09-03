@@ -34,6 +34,7 @@ import { testConfig, sleep } from './helpers.js';
 const config = testConfig();
 let world: TwinWorld;
 let servers: TwinServers;
+let sync: TwinSync;
 
 type Json = Record<string, unknown>;
 
@@ -78,7 +79,14 @@ class WsClient {
 
 beforeAll(async () => {
   world = await TwinWorld.create(config);
-  const sync = new TwinSync(world, config);
+  sync = new TwinSync(world, config);
+  const historyGps = wgs84FromScene(world.frame, { x: 100, z: 100 });
+  sync.history!.recordSummary('ch1', Date.parse('2026-04-12T05:26:00Z') / 1000, [{
+    object_id: 'history-object',
+    object_type: 'car',
+    confidence: 0.95,
+    gps_location: { lat: historyGps.lat, lon: historyGps.lon },
+  }]);
   const traffic = new TrafficController(world, config);
   const trajectories = new TrajectoryPlayer(world, config);
   const scenarios = new ScenarioStore(world, config);
@@ -90,6 +98,7 @@ beforeAll(async () => {
 afterAll(async () => {
   world.stop();
   await servers.close();
+  sync.stop();
 });
 
 describe('/drive round-trips (every preserved message type)', () => {
@@ -261,6 +270,12 @@ describe('/twin round-trips', () => {
     expect(hello).toBeDefined();
     expect(hello!['camera_id']).toBe('ch3');
     expect(hello!['cameras']).toEqual(['ch1', 'ch2', 'ch3', 'ch4']);
+    expect(hello!['replay']).toEqual({
+      retention_hours: 72,
+      archive_url_template: config.archiveUrlTemplate,
+      coverage_url: `${config.publicHttpOrigin}/detections/coverage`,
+      history_url: `${config.publicHttpOrigin}/detections/history`,
+    });
 
     const cameras = twin.json.find((m) => m['type'] === 'twin_cameras');
     expect(cameras).toBeDefined();
@@ -282,12 +297,23 @@ describe('/twin round-trips', () => {
     expect(replay['type']).toBe('twin_mode');
     expect(replay['mode']).toBe('replay');
     expect(typeof replay['replay_clock']).toBe('string');
+    expect(replay['replay_speed']).toBe(2);
 
     const badReplay = await twin.request({ type: 'twin_replay', start: 'not-a-date' });
     expect(badReplay['type']).toBe('twin_error');
+    const tooOld = await twin.request({ type: 'twin_replay', start: new Date(Date.now() - 73 * 3600_000).toISOString() });
+    expect(tooOld).toEqual({ type: 'twin_error', message: 'Replay start must be within the past 72 hours' });
 
-    await sleep(1100);
-    expect(twin.json.some((m) => m['type'] === 'twin_clock')).toBe(true);
+    await sleep(850);
+    const replayClocks = twin.json.filter((message) => message['type'] === 'twin_clock' && message['mode'] === 'replay');
+    expect(replayClocks.length).toBeGreaterThanOrEqual(3);
+    const pausedAt = String(replayClocks.at(-1)!['replay_clock']);
+    const paused = await twin.request({ type: 'twin_replay', start: pausedAt, speed: 0 });
+    expect(paused['replay_speed']).toBe(0);
+    await sleep(550);
+    const pausedClocks = twin.json.filter((message) => message['type'] === 'twin_clock' && message['replay_speed'] === 0);
+    expect(pausedClocks.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(pausedClocks.map((message) => message['replay_clock']))).toEqual(new Set([pausedAt]));
 
     const live = await twin.request({ type: 'twin_live' });
     expect(live['mode']).toBe('live');
@@ -367,6 +393,19 @@ describe('HTTP :8090', () => {
     expect(health.status).toBe(200);
     const body = (await health.json()) as Json;
     expect(body['status']).toBe('ok');
+    const rangeStart = encodeURIComponent('2026-04-12T05:25:00Z');
+    const rangeEnd = encodeURIComponent('2026-04-12T05:28:00Z');
+    const coverage = await fetch(`http://127.0.0.1:${config.httpPort}/detections/coverage?start=${rangeStart}&end=${rangeEnd}&bucket=60`);
+    expect(coverage.status).toBe(200);
+    const coverageBody = (await coverage.json()) as Json;
+    expect(coverageBody['bucket_seconds']).toBe(60);
+    expect(coverageBody['buckets']).toHaveLength(3);
+    const history = await fetch(`http://127.0.0.1:${config.httpPort}/detections/history?start=${rangeStart}&end=${rangeEnd}`);
+    expect(history.status).toBe(200);
+    const historyBody = (await history.json()) as Json;
+    expect((historyBody['items'] as Json[]).map((item) => item['object_id'])).toContain('history-object');
+    const badCoverage = await fetch(`http://127.0.0.1:${config.httpPort}/detections/coverage?start=${rangeStart}&end=nope`);
+    expect(badCoverage.status).toBe(400);
     const missing = await fetch(`http://127.0.0.1:${config.httpPort}/streams/ch9.mjpg`);
     expect(missing.status).toBe(404);
   });
