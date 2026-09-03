@@ -15,6 +15,7 @@
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/streams/ch{1..4}.mjpg` | multipart MJPEG |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/coverage` | bucketed historical detection availability |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/history` | timestamp-ordered historical detections |
+| HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/objects` | per-object summaries over a time range |
 
 The default ports are 8765 and 8090. `TWIN_WS_PORT` and `TWIN_HTTP_PORT` override them. path-rfs uses 8865 and 8190 because the drive application owns the default ports.
 
@@ -123,12 +124,19 @@ items in the form `{ts,camera,object_id,object_type,confidence,lat,lon}` and
 `next`, the timestamp of the next unreturned item. The default limit is 1000
 and the maximum is 5000.
 
+`GET /detections/objects?start=<ISO>&end=<ISO>&limit=<n>` returns `{items}`
+with one entry per `object_id` seen in the range, ordered by `last_seen`
+descending:
+`{object_id,object_type,first_seen,last_seen,count,max_confidence,cameras,last_lat,last_lon}`.
+The default limit is 200 and the maximum is 1000. The V2X Drive Timeline page
+uses this route for its event list.
+
 `GET /detections/coverage?start=<ISO>&end=<ISO>&bucket=<seconds>` returns
 `{start,end,bucket_seconds,buckets}`. Each bucket contains
 `{start,detections,objects}`, including empty buckets. The default bucket is
 300 seconds, the minimum is 10 seconds, and requests over 2000 buckets return
-HTTP 400. Both history routes return JSON errors with HTTP 400 for invalid
-parameters.
+HTTP 400. All three detection routes return JSON errors with HTTP 400 for
+invalid parameters.
 
 ## Camera feeds
 

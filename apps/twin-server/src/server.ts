@@ -128,7 +128,11 @@ export function startServers(deps: DriveDeps): TwinServers {
       }
       return;
     }
-    if (url.pathname === '/detections/coverage' || url.pathname === '/detections/history') {
+    if (
+      url.pathname === '/detections/coverage' ||
+      url.pathname === '/detections/history' ||
+      url.pathname === '/detections/objects'
+    ) {
       if (!sync.history) {
         jsonResponse(res, 503, { error: 'Detection history unavailable' });
         return;
@@ -154,9 +158,14 @@ export function startServers(deps: DriveDeps): TwinServers {
           return;
         }
         const rawLimit = url.searchParams.get('limit');
-        const requestedLimit = rawLimit === null ? 1000 : Number(rawLimit);
+        const objectsRoute = url.pathname === '/detections/objects';
+        const requestedLimit = rawLimit === null ? (objectsRoute ? 200 : 1000) : Number(rawLimit);
         if (!Number.isInteger(requestedLimit) || requestedLimit < 1) {
           throw new Error('limit must be a positive integer');
+        }
+        if (objectsRoute) {
+          jsonResponse(res, 200, { items: sync.history.objects(startMs, endMs, Math.min(requestedLimit, 1000)) });
+          return;
         }
         jsonResponse(res, 200, sync.history.range(startMs, endMs, Math.min(requestedLimit, 5000)));
       } catch (error) {

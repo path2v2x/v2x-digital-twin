@@ -52,6 +52,29 @@ describe('DetectionHistory', () => {
     ]);
   });
 
+  it('summarises objects newest-last-seen first with their latest position', () => {
+    const store = history();
+    const baseMs = 1_756_000_000_000;
+    store.recordSummary('ch1', baseMs / 1000 + 1, [detection('car-a', 37.1, -122.1), detection('car-b')]);
+    store.recordSummary('ch2', baseMs / 1000 + 5, [detection('car-a', 37.2, -122.2)]);
+    store.recordSummary('ch1', baseMs / 1000 + 3, [detection('car-b')]);
+
+    const items = store.objects(baseMs, baseMs + 10_000, 10);
+    expect(items.map((item) => item.object_id)).toEqual(['car-a', 'car-b']);
+    expect(items[0]).toEqual({
+      object_id: 'car-a',
+      object_type: 'car',
+      first_seen: new Date(baseMs + 1000).toISOString(),
+      last_seen: new Date(baseMs + 5000).toISOString(),
+      count: 2,
+      max_confidence: 0.9,
+      cameras: ['ch1', 'ch2'],
+      last_lat: 37.2,
+      last_lon: -122.2,
+    });
+    expect(store.objects(baseMs, baseMs + 10_000, 1).map((item) => item.object_id)).toEqual(['car-a']);
+  });
+
   it('prunes detections and frame dedupe keys at the retention boundary', () => {
     const store = history(1);
     const nowMs = 1_756_010_000_000;

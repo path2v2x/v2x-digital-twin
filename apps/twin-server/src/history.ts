@@ -24,6 +24,18 @@ export interface CoverageBucket {
   readonly objects: number;
 }
 
+export interface ObjectSummary {
+  readonly object_id: string;
+  readonly object_type: string;
+  readonly first_seen: string;
+  readonly last_seen: string;
+  readonly count: number;
+  readonly max_confidence: number;
+  readonly cameras: string[];
+  readonly last_lat: number;
+  readonly last_lon: number;
+}
+
 interface DetectionRow {
   ts_ms: number;
   camera: string;
@@ -40,6 +52,18 @@ interface CoverageRow {
   objects: number;
 }
 
+interface ObjectRow {
+  object_id: string;
+  object_type: string;
+  first_ms: number;
+  last_ms: number;
+  count: number;
+  max_confidence: number | null;
+  cameras: string;
+  last_lat: number;
+  last_lon: number;
+}
+
 function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
@@ -51,6 +75,7 @@ export class DetectionHistory {
   private readonly insertDetection: StatementSync;
   private readonly selectRange: StatementSync;
   private readonly selectCoverage: StatementSync;
+  private readonly selectObjects: StatementSync;
   private readonly deleteDetections: StatementSync;
   private readonly deleteFrames: StatementSync;
 
@@ -96,6 +121,24 @@ export class DetectionHistory {
       WHERE ts_ms >= ? AND ts_ms < ?
       GROUP BY bucket_index
       ORDER BY bucket_index
+    `);
+    this.selectObjects = this.db.prepare(`
+      SELECT d.object_id,
+             d.object_type,
+             MIN(d.ts_ms) AS first_ms,
+             MAX(d.ts_ms) AS last_ms,
+             COUNT(*) AS count,
+             MAX(d.confidence) AS max_confidence,
+             GROUP_CONCAT(DISTINCT d.camera) AS cameras,
+             (SELECT lat FROM detections l WHERE l.object_id = d.object_id AND l.ts_ms >= ? AND l.ts_ms < ?
+                ORDER BY l.ts_ms DESC LIMIT 1) AS last_lat,
+             (SELECT lon FROM detections l WHERE l.object_id = d.object_id AND l.ts_ms >= ? AND l.ts_ms < ?
+                ORDER BY l.ts_ms DESC LIMIT 1) AS last_lon
+      FROM detections d
+      WHERE d.ts_ms >= ? AND d.ts_ms < ?
+      GROUP BY d.object_id
+      ORDER BY last_ms DESC
+      LIMIT ?
     `);
     this.deleteDetections = this.db.prepare('DELETE FROM detections WHERE ts_ms < ?');
     this.deleteFrames = this.db.prepare('DELETE FROM frames WHERE ts_ms < ?');
@@ -170,6 +213,23 @@ export class DetectionHistory {
       };
     }
     return buckets;
+  }
+
+  objects(startMs: number, endMs: number, limit: number): ObjectSummary[] {
+    const rows = this.selectObjects.all(
+      startMs, endMs, startMs, endMs, startMs, endMs, limit,
+    ) as unknown as ObjectRow[];
+    return rows.map((row) => ({
+      object_id: row.object_id,
+      object_type: row.object_type,
+      first_seen: iso(row.first_ms),
+      last_seen: iso(row.last_ms),
+      count: Number(row.count),
+      max_confidence: row.max_confidence ?? 0,
+      cameras: row.cameras.split(',').sort(),
+      last_lat: row.last_lat,
+      last_lon: row.last_lon,
+    }));
   }
 
   prune(nowMs: number): void {
