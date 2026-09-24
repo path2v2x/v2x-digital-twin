@@ -2,7 +2,7 @@
  * Ghost lifecycle (twin_sync semantics): synthetic detections → spawn,
  * interpolation toward the next fix, 12 s expiry, and TruthFrame presence.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { TruthStreamClient, type TruthFrame } from '@simforge-oss/training-env';
 import { GhostMirror, type DetectionRecord } from '../src/ghosts.js';
 import { wgs84FromScene } from '../src/geo.js';
@@ -33,7 +33,7 @@ describe('ghost lifecycle', () => {
 
     // t0: first fix at an off-road point near the origin → spawn.
     let now = 1_000_000;
-    mirror.ingest([detection(world, 'obj-1', 20, 20)], now, { lerpDuration: 1 });
+    mirror.ingest([detection(world, 'obj-1', 20, 20)], now);
     const track = mirror.tracks.get('obj-1');
     expect(track).toBeDefined();
     expect(track!.actorId).not.toBeNull();
@@ -53,7 +53,7 @@ describe('ghost lifecycle', () => {
     // accel-limited ramp instead of v1's transform lerp — documented
     // divergence). Assert monotone progress toward the fix over 2 s.
     now += 1;
-    mirror.ingest([detection(world, 'obj-1', 28, 20)], now, { lerpDuration: 1 });
+    mirror.ingest([detection(world, 'obj-1', 28, 20)], now);
     const progressAt: number[] = [];
     for (let step = 0; step < 4; step++) {
       mirror.drive();
@@ -124,5 +124,60 @@ describe('ghost lifecycle', () => {
     expect(mirror.tracks.has('replay-car')).toBe(true);
     mirror.expire(replayEpoch + 12.1);
     expect(mirror.tracks.has('replay-car')).toBe(false);
+  });
+
+  describe('settling on a jittered fix', () => {
+    afterEach(() => vi.useRealTimers());
+
+    // Monocular fixes jump ~1-3 m between frames; the mirror must settle, not orbit.
+    async function settle(objectType: string, jump: { x: number; z: number }) {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      const world = await testWorld();
+      const mirror = new GhostMirror(world, 12);
+      let now = 3_000;
+      vi.setSystemTime(now * 1000);
+      mirror.ingest([detection(world, 'jit', 20, 20, { object_type: objectType })], now);
+      const actorId = mirror.tracks.get('jit')!.actorId!;
+      world.session.advance(10);
+      mirror.ingest([detection(world, 'jit', 20 + jump.x, 20 + jump.z, { object_type: objectType })], now);
+      let path = 0;
+      let turned = 0;
+      let prev = world.actorState(actorId)!;
+      for (let step = 0; step < 200; step++) {
+        now += world.dt;
+        vi.setSystemTime(now * 1000);
+        if (step % 10 === 0) mirror.ingest([detection(world, 'jit', 20 + jump.x, 20 + jump.z, { object_type: objectType })], now);
+        mirror.drive();
+        world.session.advance(1);
+        const cur = world.actorState(actorId)!;
+        path += Math.hypot(cur.x - prev.x, cur.z - prev.z);
+        turned += Math.abs(Math.atan2(Math.sin(cur.headingRad - prev.headingRad), Math.cos(cur.headingRad - prev.headingRad)));
+        prev = cur;
+      }
+      const miss = Math.hypot(prev.x - (20 + jump.x), prev.z - (20 + jump.z));
+      return { path, turnedDeg: (turned * 180) / Math.PI, miss, speed: prev.speedMps };
+    }
+
+    it('a pedestrian walks to a fix beside it and stops', async () => {
+      const r = await settle('person', { x: 0, z: 2 });
+      expect(r.miss).toBeLessThan(1);
+      expect(r.path).toBeLessThan(4);
+      expect(r.turnedDeg).toBeLessThan(360);
+      expect(r.speed).toBeLessThan(0.3);
+    });
+
+    it('a pedestrian walks back to a fix behind it and stops', async () => {
+      const r = await settle('person', { x: -2, z: 0 });
+      expect(r.miss).toBeLessThan(1);
+      expect(r.path).toBeLessThan(4);
+      expect(r.turnedDeg).toBeLessThan(360);
+    });
+
+    it('a car holds instead of circling a fix inside its turning radius', async () => {
+      const r = await settle('car', { x: 0, z: 2 });
+      expect(r.path).toBeLessThan(4);
+      expect(r.turnedDeg).toBeLessThan(90);
+      expect(r.speed).toBeLessThan(0.3);
+    });
   });
 });

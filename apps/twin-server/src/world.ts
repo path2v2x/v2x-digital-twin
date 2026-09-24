@@ -369,14 +369,28 @@ export class TwinWorld {
     return this.act(id, { control, motionDirection: reverse ? -1 : 1 });
   }
 
-  /** Ghost steering: chase a scene-space target at a speed (zero-order hold). */
+  /**
+   * Ghost steering: chase a scene-space target at a speed (zero-order hold).
+   * The authored route's feed-forward acceleration is zeroed so the speed
+   * setpoint alone governs motion.
+   */
   actChase(id: string, target: SceneXZ, targetSpeedMps: number): boolean {
     const state = this.actorState(id);
     if (!state) return false;
     const local = localFromScene(target);
     const cur = localFromScene({ x: state.x, z: state.z });
     const headingRad = Math.atan2(local.y - cur.y, local.x - cur.x);
-    return this.act(id, { previewPoint: local, previewHeadingRad: headingRad, targetSpeedMps });
+    return this.act(id, { previewPoint: local, previewHeadingRad: headingRad, targetSpeedMps, targetAccelerationMps2: 0 });
+  }
+
+  /** Ghost hold: brake to a stop on the current heading instead of re-aiming at a reached target. */
+  actHold(id: string): boolean {
+    const state = this.actorState(id);
+    if (!state) return false;
+    const cur = localFromScene({ x: state.x, z: state.z });
+    const headingRad = -state.headingRad;
+    const previewPoint = { x: cur.x + Math.cos(headingRad), y: cur.y + Math.sin(headingRad) };
+    return this.act(id, { previewPoint, previewHeadingRad: headingRad, targetSpeedMps: 0, targetAccelerationMps2: 0 });
   }
 
   actRelease(id: string): void {

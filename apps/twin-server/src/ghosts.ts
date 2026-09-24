@@ -7,11 +7,12 @@
  *    gps_location{lat, lon}, confidence};
  *  - spawn at the flat-earth point (vehicle types adopt lane height/yaw when
  *    the detection lies within 4 m of a lane, like the v1 waypoint snap);
- *  - motion: interpolate toward each new fix over the poll interval (v1
- *    lerped transforms; v2 chases the fix with the engine's dynamic body via
- *    zero-order-hold act overrides — documented divergence: steer-rate
- *    limited, not collision-transparent);
- *  - yaw follows the motion vector when the fix moved > 1.5 m;
+ *  - motion: chase the latest fix with the engine's dynamic body via
+ *    zero-order-hold act overrides (v1 lerped transforms). Speed is
+ *    proportional to the remaining gap and capped per type; inside the stop
+ *    radius, or when a vehicle's fix is behind it or inside its turning
+ *    circle, the actor holds its heading instead of circling the point;
+ *    gaps beyond SNAP_M respawn the actor at the fix;
  *  - despawn after `despawnAfter` (12 s) without a sighting;
  *  - spawn rejections (footprint overlap) retry on the next poll, mirroring
  *    the v1 bounded-bootstrap retry.
@@ -45,6 +46,20 @@ export interface DetectionRecord {
 
 const VEHICLE_TYPES: Record<string, true> = { car: true, truck: true, bus: true };
 
+interface ChaseProfile {
+  readonly maxSpeedMps: number;
+  /** Stop radius; the actor resumes once the fix is twice this far away. */
+  readonly settleM: number;
+  /** Forward-only turning radius; 0 for actors that can pivot in place. */
+  readonly turnRadiusM: number;
+}
+const PERSON_CHASE: ChaseProfile = { maxSpeedMps: 3, settleM: 0.5, turnRadiusM: 0 };
+const VEHICLE_CHASE: ChaseProfile = { maxSpeedMps: 20, settleM: 1.5, turnRadiusM: 5 };
+/** Chase speed closes the remaining gap in about this long. */
+const RESPONSE_S = 1;
+/** Beyond this gap the actor is respawned at the fix rather than driven there. */
+const SNAP_M = 15;
+
 const KIND_BY_TYPE: Record<string, ActorKind> = {
   car: 'car',
   truck: 'truck',
@@ -57,11 +72,13 @@ export interface GhostTrack {
   objectType: string;
   actorId: string | null;
   lastSeen: number;
+  /** Last raw fix; repeated polls of the same summary are not new evidence. */
+  fix: { lat: number; lon: number } | null;
+  /** Scene-space target (the latest fix). */
   target: SceneXZ;
-  prev: SceneXZ | null;
-  lerpStart: number;
-  lerpDuration: number;
-  yawDeg: number;
+  /** Scene heading used when (re)spawning. */
+  headingRad: number;
+  holding: boolean;
   record: DetectionRecord;
 }
 
@@ -89,7 +106,7 @@ export class GhostMirror {
    * `now` is wall time in live mode or the replay clock during replay;
    * `useDetectionTs` makes each track's last_seen its record timestamp.
    */
-  ingest(records: readonly DetectionRecord[], now: number, opts: { useDetectionTs?: boolean; lerpDuration?: number } = {}): void {
+  ingest(records: readonly DetectionRecord[], now: number, opts: { useDetectionTs?: boolean } = {}): void {
     for (const det of records) {
       const objectId = det.object_id;
       const objectType = det.object_type ?? 'car';
@@ -105,11 +122,10 @@ export class GhostMirror {
           objectType,
           actorId: null,
           lastSeen: 0,
+          fix: null,
           target: { x: 0, z: 0 },
-          prev: null,
-          lerpStart: 0,
-          lerpDuration: 1,
-          yawDeg: 0,
+          headingRad: 0,
+          holding: false,
           record: det,
         };
         this.tracks.set(objectId, track);
@@ -122,17 +138,10 @@ export class GhostMirror {
         track.lastSeen = now;
       }
 
-      const scene = this.placementFor(track, lat, lon);
-      const prev = track.actorId ? this.world.actorState(track.actorId) : undefined;
-      if (prev) {
-        const dx = scene.x - prev.x;
-        const dz = scene.z - prev.z;
-        if (Math.hypot(dx, dz) > 1.5) track.yawDeg = (Math.atan2(dz, dx) * 180) / Math.PI;
-        track.prev = { x: prev.x, z: prev.z };
+      if (!track.fix || track.fix.lat !== lat || track.fix.lon !== lon) {
+        track.fix = { lat, lon };
+        track.target = this.placementFor(track, lat, lon);
       }
-      track.target = scene;
-      track.lerpStart = Date.now() / 1000;
-      track.lerpDuration = Math.max(opts.lerpDuration ?? 1, this.world.dt);
       if (!track.actorId) this.trySpawn(track);
     }
     this.expire(now);
@@ -149,7 +158,7 @@ export class GhostMirror {
         if (geom) {
           const directedS = reversed ? geom.lengthM - nearest.s : nearest.s;
           const sample = this.world.bundle.graph.sampleDirected({ rsl: nearest.rsl, reversed }, directedS);
-          track.yawDeg = legacyYawDegFromSceneHeading(-sample.headingRad);
+          track.headingRad = -sample.headingRad;
         }
       }
     }
@@ -158,7 +167,7 @@ export class GhostMirror {
 
   private trySpawn(track: GhostTrack): void {
     const kind = KIND_BY_TYPE[track.objectType] ?? 'car';
-    const pose = { x: track.target.x, z: track.target.z, headingRad: (-track.yawDeg * Math.PI) / 180 };
+    const pose = { x: track.target.x, z: track.target.z, headingRad: track.headingRad };
     const common = {
       category: 'ghost' as const,
       kind,
@@ -178,10 +187,7 @@ export class GhostMirror {
           },
         })
       : this.world.spawnFreeform({ ...common, pose });
-    if (result.ok) {
-      track.actorId = result.id;
-      track.prev = { ...track.target };
-    }
+    if (result.ok) track.actorId = result.id;
     // Rejections (footprint overlap) retry on the next poll, as in v1.
   }
 
@@ -198,14 +204,25 @@ export class GhostMirror {
         track.actorId = null;
         continue;
       }
-      const remaining = Math.hypot(track.target.x - state.x, track.target.z - state.z);
-      if (remaining < 0.5) {
-        this.world.actChase(track.actorId, track.target, 0);
+      const dx = track.target.x - state.x;
+      const dz = track.target.z - state.z;
+      const remaining = Math.hypot(dx, dz);
+      if (remaining > SNAP_M) {
+        this.world.despawn(track.actorId);
+        track.actorId = null;
+        track.headingRad = Math.atan2(dz, dx);
+        track.holding = false;
+        this.trySpawn(track);
         continue;
       }
-      const timeLeft = Math.max(track.lerpStart + track.lerpDuration - wallNow, this.world.dt);
-      const speed = Math.min(remaining / timeLeft, 25);
-      this.world.actChase(track.actorId, track.target, speed);
+      const profile = VEHICLE_TYPES[track.objectType] ? VEHICLE_CHASE : PERSON_CHASE;
+      const settleM = track.holding ? 2 * profile.settleM : profile.settleM;
+      track.holding = remaining < settleM || !reachableForward(profile.turnRadiusM, state.headingRad, dx, dz);
+      if (track.holding) {
+        this.world.actHold(track.actorId);
+      } else {
+        this.world.actChase(track.actorId, track.target, Math.min(profile.maxSpeedMps, remaining / RESPONSE_S));
+      }
     }
   }
 
@@ -274,4 +291,20 @@ export class GhostMirror {
       };
     });
   }
+}
+
+/**
+ * Whether a forward-only body at `headingRad` (scene) can drive to the offset
+ * (dx, dz) without looping: the point must be ahead and outside both
+ * minimum-radius turning circles.
+ */
+function reachableForward(turnRadiusM: number, headingRad: number, dx: number, dz: number): boolean {
+  if (turnRadiusM === 0) return true;
+  // Scene z is negated local y; the local heading is the negated scene heading.
+  const h = -headingRad;
+  const ly = -dz;
+  const forward = dx * Math.cos(h) + ly * Math.sin(h);
+  const lateral = -dx * Math.sin(h) + ly * Math.cos(h);
+  if (forward <= 0) return false;
+  return Math.hypot(forward, Math.abs(lateral) - turnRadiusM) >= turnRadiusM;
 }

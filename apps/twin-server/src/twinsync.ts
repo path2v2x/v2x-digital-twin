@@ -130,7 +130,7 @@ export class TwinSync {
       }
       this.pollFailures = 0;
       if (this.mode === 'live') {
-        this.mirror.ingest(detections, now, { lerpDuration: 1 / this.config.pollHz });
+        this.mirror.ingest(detections, now);
       }
     } catch {
       this.pollFailures += 1;
@@ -154,7 +154,7 @@ export class TwinSync {
 
     // Reconstruct tracks still alive at the seek point, then advance from it.
     const recent = this.recordedInRange(startEpoch - this.config.despawnAfterS, startEpoch);
-    this.mirror.ingest(recent, startEpoch, { useDetectionTs: true, lerpDuration: 1 / this.config.pollHz });
+    this.mirror.ingest(recent, startEpoch, { useDetectionTs: true });
     this.mirror.setPaused(replaySpeed === 0);
   }
 
@@ -172,7 +172,7 @@ export class TwinSync {
     const chunkEnd = Math.min(clock, this.replay.cursor + 30);
     const items = this.recordedInRange(this.replay.cursor, chunkEnd);
     this.replay.cursor = chunkEnd;
-    this.mirror.ingest(items, clock, { useDetectionTs: true, lerpDuration: 1 / this.config.pollHz });
+    this.mirror.ingest(items, clock, { useDetectionTs: true });
     this.mirror.expire(clock);
   }
 
