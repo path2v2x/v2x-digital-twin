@@ -173,12 +173,15 @@ use are documented in [docs/perception-on-path-rfs.md](docs/perception-on-path-r
 `deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, proxies health,
 camera streams, and `/detections/` to `:8190`, exposes MediaMTX playback under
 `/archive/`, serves browser map bundles (3D tiles, lane topology, signals) at
-`/map-bundles/` from `/var/www/v2x-twin-map-bundles/`, serves the camera rig at
+`/map-bundles/` from `/var/www/v2x-twin-map-bundles/`, serves actor models
+(`/catalog/`, the content-hashed GLBs named in `@simforge-oss/asset-catalog`)
+from `/var/www/v2x-twin-catalog/`, serves the camera rig at
 `/drive-rigs/richmond.json`, and proxies everything else to the web UI on
 loopback `:5199`.
 
 First-time setup: copy `deploy/twin-web.env.example` to `/etc/v2x-twin-web.env`,
-place the map bundles under `/var/www/v2x-twin-map-bundles/`, symlink the vhost
-into `sites-enabled`, then run `scripts/deploy.sh --web`.
+place the map bundles under `/var/www/v2x-twin-map-bundles/` and the catalog
+models under `/var/www/v2x-twin-catalog/`, symlink the vhost into
+`sites-enabled`, then run `scripts/deploy.sh --web`.
 
 Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).

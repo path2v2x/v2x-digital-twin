@@ -40,6 +40,7 @@ path-rfs. `scripts/systemd/v2x-twin-server.service` runs the twin server;
 `deploy/v2x-twin-web.service` runs the web UI with `/etc/v2x-twin-web.env`
 (template: `deploy/twin-web.env.example`). `deploy/nginx-twin.conf` routes the
 protocol endpoints to the twin server, serves `/map-bundles/` from
-`/var/www/v2x-twin-map-bundles/` and `/drive-rigs/richmond.json` from the
+`/var/www/v2x-twin-map-bundles/`, `/catalog/` actor models from
+`/var/www/v2x-twin-catalog/` and `/drive-rigs/richmond.json` from the
 checkout, and proxies all remaining requests to the web UI. The web UI port is
 blocked on the external interface by the v2x-drive firewall.
