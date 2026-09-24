@@ -1,0 +1,16 @@
+[Unit]
+Description=V2X Digital Twin web UI
+After=network-online.target v2x-twin-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=path
+WorkingDirectory=/home/path/v2x-digital-twin/apps/twin-web
+EnvironmentFile=/etc/v2x-twin-web.env
+ExecStart=/usr/bin/pnpm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
