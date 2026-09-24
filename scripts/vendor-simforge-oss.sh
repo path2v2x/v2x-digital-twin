@@ -10,7 +10,7 @@ REF="$1"
 SOURCE_DIR="${SIMFORGE_OSS_DIR:-/home/path/simforge-oss}"
 REPO_URL="https://github.com/SimForgeinc/simforge-oss.git"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEST="${ROOT}/vendor/simforge-oss"
+DEST="${VENDOR_DEST:-${ROOT}/vendor/simforge-oss}"
 WORK="$(mktemp -d)"
 CHECKOUT="${WORK}/simforge-oss"
 trap 'rm -rf "${WORK}"' EXIT
@@ -26,7 +26,7 @@ fi
 git -C "${CHECKOUT}" checkout --quiet --detach "${REF}"
 COMMIT="$(git -C "${CHECKOUT}" rev-parse HEAD)"
 
-packages=(engine compiler maps training-env viewer asset-catalog scenario)
+packages=(engine compiler maps training-env viewer asset-catalog scenario editor openscenario playback)
 filters=()
 for package in "${packages[@]}"; do
   filters+=(--filter "@simforge-oss/${package}...")
@@ -34,6 +34,26 @@ done
 
 pnpm --pm-on-fail=ignore --dir "${CHECKOUT}" install --frozen-lockfile
 pnpm --pm-on-fail=ignore --dir "${CHECKOUT}" "${filters[@]}" build
+
+# Publish every subpath the source exports (minus the source-only `development`
+# condition); upstream publishConfig omits browser-safe entries such as
+# @simforge-oss/maps/camera-rig that the twin UI imports.
+node - "${CHECKOUT}" "${packages[@]}" <<'NODE'
+const fs = require('node:fs');
+const path = require('node:path');
+const [checkout, ...packages] = process.argv.slice(2);
+const strip = (value) => {
+  if (typeof value !== 'object' || value === null) return value;
+  return Object.fromEntries(Object.entries(value).filter(([key]) => key !== 'development').map(([key, inner]) => [key, strip(inner)]));
+};
+for (const packageName of packages) {
+  const file = path.join(checkout, 'packages', packageName, 'package.json');
+  const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
+  if (!manifest.exports) continue;
+  manifest.publishConfig = { ...manifest.publishConfig, exports: strip(manifest.exports) };
+  fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+NODE
 
 rm -rf "${DEST}"
 mkdir -p "${DEST}"
