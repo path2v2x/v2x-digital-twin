@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement } from 'react';
 import type { AmbientTrafficProvenance, ResolvedAmbientTrafficProfile } from '@simforge-oss/engine';
-import { ambientPromotionCapability, nextAmbientSeed, profileForPreset, type AmbientTrafficPreset } from '@simforge-oss/playback/traffic';
+import type { EditorDocument } from '@simforge-oss/editor';
+import { AMBIENT_TRAFFIC_EXTENSION_KEY, AMBIENT_TRAFFIC_PROVIDER_EXTENSION_KEY, ambientPromotionCapability, ambientTrafficProfileFromExtensions, nextAmbientSeed, profileForPreset, type AmbientTrafficPreset } from '@simforge-oss/playback/traffic';
 import type { AmbientRobustnessSummary } from '../playback/scenario-worker';
-import type { AmbientTrafficProviderId, SumoTrafficStatus } from '@simforge-oss/playback/traffic';
+import { engineTrafficProviderFromExtensions, type EngineTrafficProvider } from '../../../dashboard/scenario/scene/previewPolicy';
 
 export interface AmbientTrafficPanelProps {
   profile: ResolvedAmbientTrafficProfile;
@@ -12,15 +13,8 @@ export interface AmbientTrafficPanelProps {
   busy?: boolean;
   error?: string | null;
   onChange: (profile: ResolvedAmbientTrafficProfile) => void;
-  provider?: AmbientTrafficProviderId;
-  onProviderChange?: (provider: AmbientTrafficProviderId) => void;
-  acceleratedSignalCycles?: boolean;
-  onAcceleratedSignalCyclesChange?: (enabled: boolean) => void;
-  allSignalsGreen?: boolean;
-  onAllSignalsGreenChange?: (enabled: boolean) => void;
-  sumoStatus?: SumoTrafficStatus | null;
-  sumoAvailable?: boolean;
-  sumoUnavailableReason?: string | null;
+  provider?: EngineTrafficProvider;
+  onProviderChange?: (provider: EngineTrafficProvider) => void;
   robustnessReport?: AmbientRobustnessSummary | null;
   robustnessBusy?: boolean;
   onRunRobustness?: () => void;
@@ -38,7 +32,7 @@ const PRESETS: readonly { id: AmbientTrafficPreset; label: string }[] = [
 ];
 
 /** Scenario-owned background traffic controls. Generated actors stay separate from authored actors. */
-export function AmbientTrafficPanel({ profile, provenance, busy = false, error = null, onChange, provider = 'off', onProviderChange, acceleratedSignalCycles = false, onAcceleratedSignalCyclesChange, allSignalsGreen = false, onAllSignalsGreenChange, sumoStatus = null, sumoAvailable = true, sumoUnavailableReason = null, robustnessReport = null, robustnessBusy = false, onRunRobustness, defaultOpen = false, alwaysOpen = false }: AmbientTrafficPanelProps): ReactElement {
+export function AmbientTrafficPanel({ profile, provenance, busy = false, error = null, onChange, provider = 'off', onProviderChange, robustnessReport = null, robustnessBusy = false, onRunRobustness, defaultOpen = false, alwaysOpen = false }: AmbientTrafficPanelProps): ReactElement {
   const [open, setOpen] = useState(defaultOpen);
   const [seedDraft, setSeedDraft] = useState(String(profile.seed));
   const [promotionActorId, setPromotionActorId] = useState('');
@@ -79,60 +73,17 @@ export function AmbientTrafficPanel({ profile, provenance, busy = false, error =
           Traffic engine
           <select
             value={provider}
-            onChange={(event) => onProviderChange?.(event.target.value as AmbientTrafficProviderId)}
+            onChange={(event) => onProviderChange?.(event.target.value as EngineTrafficProvider)}
             style={styles.select}
             data-testid="ambient-traffic-provider"
           >
             <option value="off">Off</option>
             <option value="native">Native</option>
-            <option value="sumo" disabled={!sumoAvailable}>SUMO (Experimental)</option>
           </select>
         </label>
-        {!sumoAvailable ? <div style={styles.error} role="status" data-testid="sumo-unavailable">
-          {sumoUnavailableReason ?? 'This map does not include an immutable SUMO road network.'}
-        </div> : null}
         {engineOff ? <div style={styles.status} role="status" aria-live="polite" data-testid="ambient-traffic-off-status">
           <strong>Ambient traffic off</strong>
           <div>No background vehicles or traffic engine are running.</div>
-        </div> : null}
-        {provider === 'sumo' && sumoStatus ? <div style={sumoStatus.phase === 'fallback' ? styles.error : styles.status} data-testid="sumo-traffic-status">
-          <strong>{sumoStatus.phase === 'fallback' ? 'SUMO unavailable' : `SUMO ${sumoStatus.phase}`}</strong>
-          {sumoStatus.reason ? ` · ${sumoStatus.reason}` : null}
-          {sumoStatus.phase !== 'fallback' ? <>
-            <div>{sumoStatus.actorCount}/{sumoStatus.requestedActorCount ?? sumoStatus.actorCount} active · {sumoStatus.nearbyRouteStarts ?? 0} local route starts · {formatBytes(sumoStatus.heapBytes)} heap</div>
-            {(sumoStatus.simulatedActorCount ?? sumoStatus.actorCount) > sumoStatus.actorCount ? <div>{sumoStatus.simulatedActorCount} simulated · presentation capped at {sumoStatus.actorCount}</div> : null}
-            <div>{sumoStatus.nearbyActorCount ?? 0} nearby · {sumoStatus.queuedActorCount ?? 0} queued · {sumoStatus.completedActorCount ?? 0} completed</div>
-            <div>{sumoStatus.emergencyStoppingActorCount ?? 0} emergency braking · safety counters {sumoStatus.detailedSafetyMetricsAvailable ? 'available' : 'not exposed'}</div>
-            <div>{formatMs(sumoStatus.initMilliseconds)} init · {formatMs(sumoStatus.stepP95Milliseconds)} step p95</div>
-          </> : null}
-        </div> : null}
-        {provider === 'sumo' ? <div style={styles.toggleBlock}>
-          <label style={styles.toggleLabel}>
-            <input
-              type="checkbox"
-              checked={allSignalsGreen}
-              onChange={(event) => onAllSignalsGreenChange?.(event.currentTarget.checked)}
-              disabled={busy}
-              data-testid="ambient-traffic-all-signals-green"
-            />
-            <span>Set all traffic lights green</span>
-          </label>
-          <div style={styles.toggleHint}>
-            Overrides every SUMO-controlled light during preview. This can create conflicting traffic movements.
-          </div>
-          <label style={styles.toggleLabel}>
-            <input
-              type="checkbox"
-              checked={acceleratedSignalCycles}
-              onChange={(event) => onAcceleratedSignalCyclesChange?.(event.currentTarget.checked)}
-              disabled={busy}
-              data-testid="ambient-traffic-accelerated-signal-cycles"
-            />
-            <span>Accelerated signal cycles</span>
-          </label>
-          <div style={styles.toggleHint}>
-            Compress long map signal programs to fit the scenario preview. Off uses the map's original timings.
-          </div>
         </div> : null}
         <label style={styles.label}>
           Density preset
@@ -286,12 +237,19 @@ export function AmbientTrafficPanel({ profile, provenance, busy = false, error =
   );
 }
 
-function formatMs(value: number | undefined): string {
-  return value === undefined ? '—' : `${value.toFixed(1)} ms`;
-}
-
-function formatBytes(value: number | undefined): string {
-  return value === undefined ? '—' : `${(value / 1024 / 1024).toFixed(0)} MiB`;
+/** Engine-traffic fine tuning bound to the document's ambient-traffic extensions. */
+export function DocumentAmbientTrafficPanel({ document }: { document: EditorDocument }): ReactElement {
+  const extensions = document.data.extensions;
+  return <section data-testid="drive-ambient-editor">
+    <AmbientTrafficPanel
+      alwaysOpen
+      profile={ambientTrafficProfileFromExtensions(extensions)}
+      provenance={null}
+      provider={engineTrafficProviderFromExtensions(extensions)}
+      onProviderChange={(next) => document.setAmbientTrafficExtension(AMBIENT_TRAFFIC_PROVIDER_EXTENSION_KEY, next)}
+      onChange={(next) => document.setAmbientTrafficExtension(AMBIENT_TRAFFIC_EXTENSION_KEY, next)}
+    />
+  </section>;
 }
 
 export interface AmbientTrafficPopoverProps extends Omit<AmbientTrafficPanelProps, 'defaultOpen' | 'alwaysOpen'> {
@@ -377,9 +335,6 @@ const styles: Record<string, CSSProperties> = {
   seedRow: { display: 'flex', gap: 5 },
   regenerate: { width: 31, borderRadius: 6, border: '1px solid rgba(255,255,255,0.13)', background: 'rgba(255,255,255,0.06)', color: '#edf1f7', cursor: 'pointer' },
   hint: { margin: '-2px 0 10px', color: '#707a89', fontSize: 10, lineHeight: 1.35 },
-  toggleBlock: { margin: '1px 0 10px' },
-  toggleLabel: { display: 'flex', alignItems: 'center', gap: 7, color: '#c8d0dc', fontSize: 11, cursor: 'pointer' },
-  toggleHint: { margin: '4px 0 0 22px', color: '#707a89', fontSize: 10, lineHeight: 1.35 },
   range: { display: 'grid', gap: 1, margin: '7px 0', color: '#9da6b5', fontSize: 11 },
   active: { color: '#7fcf9b' },
   muted: { color: '#707a89' },

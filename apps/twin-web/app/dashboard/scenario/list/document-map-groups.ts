@@ -25,7 +25,6 @@ export type ScenarioMapOption = {
   derivedTopologyUrl?: string | null;
   locationsUrl?: string | null;
   signalsUrl?: string | null;
-  sumoNetworkUrl?: string | null;
 } & Partial<
   Pick<
     ScenarioMapEntry,

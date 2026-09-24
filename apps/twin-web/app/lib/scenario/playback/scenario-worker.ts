@@ -267,8 +267,8 @@ async function prepareUncached(request: ScenarioWorkerRequest): Promise<Scenario
       maxAchievableDecelMps2: request.evaluationFilters?.maxAchievableDecelMps2,
     });
     // The core schema requires one actor. Keep a remote, non-render-authoritative
-    // clock only when an external provider (SUMO) owns the entire visible
-    // population; remove it as soon as native ambient actors exist.
+    // clock only while no ambient actors populate the world; remove it as soon
+    // as native ambient actors exist.
     const ambient = populated.provenance.actors.length === 0 ? populated : {
       ...populated,
       input: { ...populated.input, actors: populated.input.actors.filter((actor) => actor.id !== 'ambient-world-seed') },

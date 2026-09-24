@@ -25,7 +25,7 @@ import { ScenarioTimelineDock } from "@/app/dashboard/scenario/editor/ScenarioTi
 import { timelineActorLabels, type V1TimelineBrowserPlayback } from "@/app/dashboard/scenario/editor/timeline/V1TimelineRail";
 import { ScenarioEditorReadout, ScenarioEditorShell } from "@/app/dashboard/scenario/editor/shell";
 import { EditorSceneEnvironmentBridge } from "@/app/dashboard/scenario/editor/EditorSceneEnvironmentBridge";
-import { useDriveAmbientTraffic } from "@/app/lib/scenario/ambient/useDriveAmbientTraffic";
+import { DocumentAmbientTrafficPanel } from "@/app/lib/scenario/ambient/AmbientTrafficPanel";
 import { createMultiplexedCameraFeeds, type CameraFeedState, type CameraFeeds } from "@/app/lib/live-world/camera-feeds";
 import { createAuthoredWorldSource, type AuthoredWorldSource } from "@/app/lib/live-world/authored-world-source";
 import { createRemoteWorldSource } from "@/app/lib/live-world/remote-world-source";
@@ -228,17 +228,6 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     setFeedStates(cameraFeeds.states);
     return cameraFeeds.subscribeStates(setFeedStates);
   }, [cameraFeeds]);
-
-  const ambientTraffic = useDriveAmbientTraffic({
-    document: editorDocument,
-    map,
-    viewer,
-    mapLoaded,
-    latestFrame: authored.latestFrame,
-    mode: transport?.playing ? "playing" : transport?.inspecting ? "paused" : "authoring",
-    time: transport?.time ?? 0,
-    onFallback: (reason) => toast.error("SUMO unavailable", { description: reason }),
-  });
 
   useEffect(() => {
     if (!liveBridge || !twinSource) return;
@@ -458,9 +447,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                       activeTool={expandedTool}
                       onExpandedToolChange={selectLibraryTool}
                       document={editorDocument}
-                      trafficDetails={ambientTraffic.trafficDetails}
-                      sumoAvailable={ambientTraffic.sumoAvailable}
-                      sumoStatus={ambientTraffic.sumoStatus}
+                      trafficDetails={editorDocument ? <DocumentAmbientTrafficPanel document={editorDocument} /> : null}
                     />
                   </div>
                 ) : null}

@@ -16,7 +16,6 @@ import {
   isCatalogId,
 } from "@simforge-oss/asset-catalog";
 
-import type { SumoTrafficStatus } from "@simforge-oss/playback/traffic";
 import type { EditorController, EditorDocument, EditorState } from "@simforge-oss/editor";
 import {
   ACTOR_CATALOG_SECTIONS,
@@ -133,8 +132,6 @@ export function ActorLibraryRail({
   onExpandedToolChange,
   document: editorDocument = null,
   trafficDetails = null,
-  sumoAvailable = true,
-  sumoStatus = null,
   parkedCars = null,
 }: {
   controller: EditorController | null;
@@ -148,10 +145,8 @@ export function ActorLibraryRail({
   onExpandedToolChange?: (tool: ViewportTool | null) => void;
   /** Scene tools edit the document directly rather than arming a placement. */
   document?: EditorDocument | null;
-  /** Numeric ambient-traffic editor, owned by the surface that has its status. */
+  /** Numeric ambient-traffic editor, owned by the surface that holds the document. */
   trafficDetails?: ReactNode;
-  sumoAvailable?: boolean;
-  sumoStatus?: SumoTrafficStatus | null;
   /**
    * Parked-car generator state. Owned by the surface, which holds the viewer
    * that draws the cars, so the panel and the scene cannot disagree.
@@ -671,12 +666,7 @@ export function ActorLibraryRail({
             ) : activeTool === "weather" ? (
               <AddWeatherPanel document={editorDocument} />
             ) : activeTool === "traffic" ? (
-              <AddTrafficPanel
-                details={trafficDetails}
-                document={editorDocument}
-                sumoAvailable={sumoAvailable}
-                sumoStatus={sumoStatus}
-              />
+              <AddTrafficPanel details={trafficDetails} document={editorDocument} />
             ) : activeTool === "parked" && parkedCars ? (
               <ParkedCarsPanel
                 bakedCount={parkedCars.bakedCount}

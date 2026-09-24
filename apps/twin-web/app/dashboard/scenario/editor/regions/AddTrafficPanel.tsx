@@ -1,17 +1,19 @@
 "use client";
 
-import { Ban, Building2, Car, Gauge, Network, Truck } from "lucide-react";
+import { Ban, Building2, Car, Gauge, Truck } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   AMBIENT_TRAFFIC_EXTENSION_KEY,
   AMBIENT_TRAFFIC_PROVIDER_EXTENSION_KEY,
   ambientTrafficProfileFromExtensions,
-  ambientTrafficProviderFromExtensions,
   profileForPreset,
-  type AmbientTrafficProviderId,
-  type SumoTrafficStatus,
 } from "@simforge-oss/playback/traffic";
 import type { EditorDocument } from "@simforge-oss/editor";
+
+import {
+  engineTrafficProviderFromExtensions,
+  type EngineTrafficProvider,
+} from "../../scene/previewPolicy";
 
 import {
   matchesSearch,
@@ -24,14 +26,13 @@ import {
 type TrafficPreset = "off" | "light" | "moderate" | "heavy" | "city";
 
 const SOURCE_CHOICES: readonly {
-  value: AmbientTrafficProviderId;
+  value: EngineTrafficProvider;
   label: string;
   detail: string;
   icon: typeof Car;
 }[] = [
   { value: "off", label: "None", detail: "Authored actors only", icon: Ban },
   { value: "native", label: "City sim", detail: "Deterministic fill", icon: Building2 },
-  { value: "sumo", label: "SUMO", detail: "Microsimulation", icon: Network },
 ];
 
 const DENSITY_CHOICES: readonly {
@@ -57,13 +58,9 @@ const DENSITY_CHOICES: readonly {
 export function AddTrafficPanel({
   details,
   document,
-  sumoAvailable = true,
-  sumoStatus = null,
 }: {
   details?: ReactNode;
   document: EditorDocument | null;
-  sumoAvailable?: boolean;
-  sumoStatus?: SumoTrafficStatus | null;
 }) {
   if (!document) {
     return (
@@ -74,9 +71,8 @@ export function AddTrafficPanel({
   }
 
   const extensions = document.data.extensions;
-  const provider = ambientTrafficProviderFromExtensions(extensions);
+  const provider = engineTrafficProviderFromExtensions(extensions);
   const profile = ambientTrafficProfileFromExtensions(extensions);
-  const phase = sumoStatus?.phase === "disabled" ? "off" : sumoStatus?.phase ?? "off";
 
   return (
     <div data-testid="add-traffic-panel">
@@ -84,12 +80,10 @@ export function AddTrafficPanel({
         <PanelTileGrid>
           {SOURCE_CHOICES.map((choice, index) => {
             const Icon = choice.icon;
-            const blocked = choice.value === "sumo" && !sumoAvailable;
             return (
               <PanelTile
                 active={provider === choice.value}
-                detail={choice.value === "sumo" && provider === "sumo" ? phase : choice.detail}
-                disabled={blocked}
+                detail={choice.detail}
                 icon={<Icon aria-hidden="true" size={22} strokeWidth={1.6} />}
                 index={index}
                 key={choice.value}
@@ -99,9 +93,7 @@ export function AddTrafficPanel({
                   choice.value,
                 )}
                 testId={`traffic-source-${choice.value}`}
-                title={blocked
-                  ? "SUMO is unavailable because this map has no immutable SUMO network."
-                  : choice.detail}
+                title={choice.detail}
               />
             );
           })}
@@ -163,7 +155,7 @@ export function trafficSearchResults(
 ): SceneSearchResult[] {
   if (!document) return [];
   const extensions = document.data.extensions;
-  const provider = ambientTrafficProviderFromExtensions(extensions);
+  const provider = engineTrafficProviderFromExtensions(extensions);
   const profile = ambientTrafficProfileFromExtensions(extensions);
   const results: SceneSearchResult[] = [];
   for (const choice of SOURCE_CHOICES) {

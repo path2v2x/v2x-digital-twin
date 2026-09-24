@@ -1,10 +1,12 @@
 import type { ResolvedAmbientTrafficProfile } from "@simforge-oss/engine";
-import { ambientTrafficProfileFromExtensions } from "@simforge-oss/playback/traffic";
 import {
+  ambientTrafficProfileFromExtensions,
   ambientTrafficProviderFromExtensions,
 } from "@simforge-oss/playback/traffic";
 import type { ScenarioMapEntry } from "@simforge-oss/editor";
 import type { ScenarioMapOption } from "../list/document-map-groups";
+
+export type EngineTrafficProvider = "off" | "native";
 
 /** Playback compilation needs this complete immutable map-sidecar closure. */
 export function mapSupportsScenarioPreview(
@@ -25,12 +27,17 @@ export function mapSupportsScenarioPreview(
   );
 }
 
-export function previewAmbientTrafficProfile(
-  provider: ReturnType<typeof ambientTrafficProviderFromExtensions>,
+/** Any saved non-off provider, including legacy external-provider choices, runs native engine traffic. */
+export function engineTrafficProviderFromExtensions(
   extensions: Readonly<Record<string, unknown>> | undefined,
-  hasAuthoredMapSignals = false,
+): EngineTrafficProvider {
+  return ambientTrafficProviderFromExtensions(extensions) === "off" ? "off" : "native";
+}
+
+export function previewAmbientTrafficProfile(
+  extensions: Readonly<Record<string, unknown>> | undefined,
 ): ResolvedAmbientTrafficProfile {
-  return previewExecutionTrafficProvider(provider, hasAuthoredMapSignals) === "native"
+  return engineTrafficProviderFromExtensions(extensions) === "native"
     ? ambientTrafficProfileFromExtensions(extensions)
     : ambientTrafficProfileFromExtensions({
         "studio.ambientTraffic.profile.v1": {
@@ -39,16 +46,4 @@ export function previewAmbientTrafficProfile(
           seed: "execution-provider-off",
         },
       });
-}
-
-/**
- * Authored controllers must be the only signal authority. The browser SUMO
- * bridge cannot inject their tlLogic, so match Scenario Studio by running
- * native engine traffic—which consumes the compiled signal book—in that case.
- */
-export function previewExecutionTrafficProvider(
-  provider: ReturnType<typeof ambientTrafficProviderFromExtensions>,
-  hasAuthoredMapSignals: boolean,
-): ReturnType<typeof ambientTrafficProviderFromExtensions> {
-  return provider === "sumo" && hasAuthoredMapSignals ? "native" : provider;
 }

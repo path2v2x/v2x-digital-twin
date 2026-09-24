@@ -2,7 +2,6 @@
 
 import type { SimScenarioInput } from '@simforge-oss/engine';
 import type { EditorDocument, ScenarioMapEntry } from '@simforge-oss/editor';
-import { ambientTrafficProviderFromExtensions } from '@simforge-oss/playback/traffic';
 import { TruthStreamClient } from '@simforge-oss/training-env/browser';
 
 import { playbackMapEntry } from '../scenario/maps';
@@ -53,11 +52,7 @@ export async function createAuthoredWorldSource(opts: {
     const bundle = await compiler.prepare(
       opts.document.data,
       playbackMapEntry(opts.map),
-      previewAmbientTrafficProfile(
-        ambientTrafficProviderFromExtensions(opts.document.data.extensions),
-        opts.document.data.extensions,
-        opts.document.data.mapSignalPlans.length > 0,
-      ),
+      previewAmbientTrafficProfile(opts.document.data.extensions),
       undefined,
       { materializeOnly: true },
     );

@@ -22,7 +22,6 @@ export interface MapEntry {
   readonly browserManifestUrl: string;
   readonly browserClosureSha256: string;
   readonly artifacts: MapArtifactDigests;
-  readonly sumoNetworkSha256: string | null;
   /** Compatibility aliases consumed by the vendored studio runtime. */
   readonly manifest: string;
   readonly xodr: string;
@@ -31,7 +30,6 @@ export interface MapEntry {
   readonly topology: string;
   readonly derivedTopology: string;
   readonly locations: string;
-  readonly sumoManifest: string | null;
 }
 
 function withoutTrailingSlash(url: string): string {
@@ -59,7 +57,6 @@ export function playbackMapEntry(map: ScenarioMapEntry): MapEntry {
     browserManifestUrl: map.browserManifestUrl,
     browserClosureSha256: map.browserClosureSha256,
     artifacts: map.artifacts,
-    sumoNetworkSha256: map.sumoNetworkSha256,
     manifest: map.browserManifestUrl,
     xodr: assetUrl('map.xodr'),
     lanePolygons: assetUrl('lane-polygons.geojson.gz'),
@@ -67,8 +64,5 @@ export function playbackMapEntry(map: ScenarioMapEntry): MapEntry {
     topology: assetUrl('topology-index.json.gz'),
     derivedTopology: assetUrl('derived/topology-derived.json.gz'),
     locations: assetUrl('derived/locations.json.gz'),
-    sumoManifest: map.sumoNetworkSha256
-      ? assetUrl('derived/sumo/sumo-network-manifest.json')
-      : null,
   };
 }
