@@ -2,10 +2,12 @@
   "name": "v2x-digital-twin",
   "version": "2.0.0",
   "private": true,
-  "description": "SimForge OSS-native V2X digital twin with WebSocket truth, control, and camera feed transport.",
+  "description": "V2X Digital Twin for the Richmond Field Station: twin server with WebSocket truth, control, and camera transport plus the operator web UI.",
   "scripts": {
     "dev": "pnpm --dir apps/twin-server dev",
     "dev:server": "pnpm --dir apps/twin-server dev",
-    "test:server": "pnpm --dir apps/twin-server test"
+    "dev:web": "pnpm --dir apps/twin-web dev",
+    "test:server": "pnpm --dir apps/twin-server test",
+    "test:web": "pnpm --dir apps/twin-web test"
   }
 }

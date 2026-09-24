@@ -257,7 +257,7 @@ const PRESETS: { label: string; s: number; t: number; b: number; rev?: boolean }
   { label: 'Hard Left', s: -1, t: 0.3, b: 0 },
   { label: 'Hard Right', s: 1, t: 0.3, b: 0 },
 ]
-const LS_KEY = 'simforge-drive-scripts'
+const LS_KEY = 'v2x-twin-scripts'
 let SID = 1
 
 const DOCS = [
@@ -265,7 +265,7 @@ const DOCS = [
     dir: 'send', name: 'start_session', title: 'Spawn a drive-session vehicle',
     body: (
       <>
-        <p>Spawns an ego vehicle in the shared SimForge world and reconstructs the V2X scene for the requested time window. <code>start</code>/<code>end</code> are ISO-8601 timestamps defining the reconstruction window.</p>
+        <p>Spawns an ego vehicle in the shared twin world and reconstructs the V2X scene for the requested time window. <code>start</code>/<code>end</code> are ISO-8601 timestamps defining the reconstruction window.</p>
         <pre>{`{ "type": "start_session",
   "start": "2026-07-09T09:00:00Z",
   "end":   "2026-07-09T10:00:00Z",
@@ -382,7 +382,7 @@ export default function App() {
     active.current = { ...active.current, rev: g === 'R' }
   }
   useEffect(() => {
-    try { const s = localStorage.getItem('simforge-drive-opmode'); if (s === 'raw' || s === 'assisted') setOpMode(s) } catch { /* ignore */ }
+    try { const s = localStorage.getItem('v2x-twin-opmode'); if (s === 'raw' || s === 'assisted') setOpMode(s) } catch { /* ignore */ }
   }, [])
   const [playingId, setPlayingId] = useState<number | null>(null)
   const [mode, setMode] = useState<'idle' | 'manual' | 'playing'>('idle')
@@ -480,7 +480,7 @@ export default function App() {
   // stop a playing script, release manual driving, zero the held input.
   const switchOpMode = (m: 'assisted' | 'raw') => {
     setOpMode(m)
-    try { localStorage.setItem('simforge-drive-opmode', m) } catch { /* ignore */ }
+    try { localStorage.setItem('v2x-twin-opmode', m) } catch { /* ignore */ }
     if (m === 'raw') {
       abort.current = true; setPlayingId(null); setMode('idle')
       setManual(false); active.current = idleCtrl()
@@ -545,7 +545,7 @@ export default function App() {
 
   const handleMsg = useCallback((ev: MessageEvent<unknown>) => {
     if (ev.data instanceof Blob) {
-      recordWire('RX', 'bin', 'truth_frame', '[binary SimForge truth frame]', ev.data.size)
+      recordWire('RX', 'bin', 'truth_frame', '[binary truth frame]', ev.data.size)
       return
     }
     const raw = String(ev.data)
@@ -694,14 +694,14 @@ export default function App() {
   const [theme, setTheme] = useState<'night' | 'day'>('night')
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('simforge-drive-theme')
+      const stored = localStorage.getItem('v2x-twin-theme')
       if (stored === 'day' || stored === 'night') setTheme(stored)
       else if (window.matchMedia?.('(prefers-color-scheme: light)').matches) setTheme('day')
     } catch { /* ignore */ }
   }, [])
   const toggleTheme = () => setTheme((t) => {
     const next = t === 'night' ? 'day' : 'night'
-    try { localStorage.setItem('simforge-drive-theme', next) } catch { /* ignore */ }
+    try { localStorage.setItem('v2x-twin-theme', next) } catch { /* ignore */ }
     return next
   })
 
@@ -715,7 +715,7 @@ export default function App() {
             <span className="plate-mark"><Car className="icon" /></span>
             <div>
               <div className="plate-model">DRIVE API <span>· DEV CONSOLE</span></div>
-              <div className="plate-sub">SimForge digital twin · /drive over WebSocket</div>
+              <div className="plate-sub">V2X Digital Twin · /drive over WebSocket</div>
             </div>
           </div>
           <div className="lamps" aria-hidden="true">

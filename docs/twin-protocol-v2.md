@@ -2,7 +2,7 @@
 
 ## Scope
 
-`apps/twin-server` owns one shared SimForge OSS world and exposes control, truth, camera, and health interfaces. Historical lineage: protocol v2 replaced a retired CARLA bridge; that runtime is not present or used.
+`apps/twin-server` owns one shared simulation world and exposes control, truth, camera, and health interfaces. Historical lineage: protocol v2 replaced a retired CARLA bridge; that runtime is not present or used.
 
 ## Endpoints
 

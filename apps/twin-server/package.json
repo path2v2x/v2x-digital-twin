@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "SimForge OSS-native V2X digital-twin server with WebSocket truth/control and local camera feeds.",
+  "description": "V2X Digital Twin server: shared simulation world with WebSocket truth/control, detection history, and camera feeds.",
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",

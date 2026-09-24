@@ -13,7 +13,7 @@ import { TwinWorld } from './world.js';
 
 const config = loadConfig();
 console.log('='.repeat(60));
-console.log('  V2X Digital Twin — SimForge OSS twin-server');
+console.log('  V2X Digital Twin — twin-server');
 console.log('='.repeat(60));
 console.log(`  Map      : ${config.mapId} (${config.mapBundleDir})`);
 

@@ -5,7 +5,7 @@
     "description": "One NPC starts at RFS spawn point 3, waits for one second, accelerates linearly to 12 m/s over three seconds, and cruises for the remainder of the 30 second clip. The drive session supplies the externally controlled ego. Conditions are clear at noon.",
     "createdAt": "2026-08-23T00:00:00.000Z",
     "modifiedAt": "2026-08-23T00:00:00.000Z",
-    "appVersion": "simforge/0.0.1",
+    "appVersion": "v2x-twin/0.0.1",
     "tags": [
       "v2x-migration",
       "openscenario",

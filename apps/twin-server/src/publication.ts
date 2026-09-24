@@ -70,7 +70,7 @@ export class Publisher {
       objects,
       map: {
         status: 'connected',
-        engine: 'simforge-oss',
+        engine: 'v2x-twin',
         objects_tracked: objects.length,
         state_source: this.sync.currentMode() === 'replay' ? 'recorded_replay' : 'twin_sync',
         last_heartbeat: new Date(nowS * 1000).toISOString().replace(/\.\d+Z$/, 'Z'),

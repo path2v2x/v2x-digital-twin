@@ -1,55 +1,75 @@
-# v2x-digital-twin
+# V2X Digital Twin
 
-SimForge-native digital twin for the Richmond Field Station V2X deployment. The server owns simulation truth, mirrors detections from the local co-perception service, and serves drive control, truth frames, and camera feeds. Historical lineage: CARLA is not used by this repository or its runtime.
+Digital twin for the Richmond Field Station V2X deployment. The twin server owns simulation truth, mirrors detections from the local co-perception service, records detection history for replay, and serves drive control, truth frames, and camera feeds. The web UI renders the live world, looks through the pole cameras, replays history, and authors scenarios. CARLA is not used by this repository or its runtime.
 
 ## Architecture
 
 | Component | Responsibility | Default interface |
 |---|---|---|
-| `apps/twin-server` | SimForge OSS world, drive commands, truth publication, 72-hour detection history/replay, local detection mirroring, MJPEG relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/`, `/detections/` |
+| `apps/twin-server` | Shared simulation world, drive commands, truth publication, 72-hour detection history/replay, local detection mirroring, camera relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/`, `/detections/` |
+| `apps/twin-web` | Operator UI (Next.js): live world view, right-hand camera strip that looks through the pole cameras, top-bar timeline with Live and replay, scenario editor with actor library and bottom actor timeline | HTTP `:5199` |
 | `apps/dev-console` | Low-level `/drive` protocol console | Vite development server |
-| SimForge Studio Drive | Operator interface from `SimForgeinc/simforge-oss` | HTTP `:5199`; connects through the public twin WebSocket routes |
 
 `path2v2x/co-perception` is the only perception implementation. It is a separate repository and process.
 
-## SimForge OSS dependency
+The world session runs in live mode and is re-rooted onto a fresh engine session every `TWIN_SESSION_EPOCH_SECONDS` (600 s) so spawn cost does not grow with uptime.
 
-The dependency flow is one way: this repository consumes `SimForgeinc/simforge-oss`; `simforge-oss` does not consume code from this repository. The packages are not fetched from a registry. They are built and packed from the pinned open-source ref:
+## Vendored SimForge OSS packages
+
+The simulation engine, map, scenario, editor, and playback libraries are consumed as a frozen fork of `SimForgeinc/simforge-oss`: packed tarballs committed under `vendor/simforge-oss`, built from commit `c7277f44` and recorded in `vendor/simforge-oss/LOCK.json`. Nothing is fetched from a registry and nothing is contributed back upstream. The `@simforge-oss/*` package names are kept as-is.
+
+To regenerate the archives (only needed to move the pin):
 
 ```bash
-scripts/vendor-simforge-oss.sh v0.1.0-rc.60
+make vendor            # scripts/vendor-simforge-oss.sh c7277f44
+pnpm install
 ```
 
-Set `SIMFORGE_OSS_DIR` to use a different existing checkout; it defaults to `/home/path/simforge-oss`. If no checkout exists, the script clones `https://github.com/SimForgeinc/simforge-oss.git` into a temporary directory. It installs with the upstream frozen lockfile, builds the required dependency closure, packs seven packages into `vendor/simforge-oss`, and records the ref, commit, package names, and versions in `vendor/simforge-oss/LOCK.json`.
+The script clones `SIMFORGE_OSS_DIR` (default `/home/path/simforge-oss`) or, if absent, `https://github.com/SimForgeinc/simforge-oss.git` into a temporary directory, checks out the ref, builds the package closure, publishes every non-development export subpath, packs the packages into `vendor/simforge-oss`, and rewrites `LOCK.json`.
 
-`v0.1.0-rc.60` is used because it is the newest repository tag and all required packages build there. The compiler still exports `@simforge-oss/compiler/node`, which the server uses. Packed manifests contain only built `dist` export targets, so no postinstall export repair is needed.
+## Local development
 
-The seven archives are each below 10 MB and are committed. A fresh install therefore does not require an npm registry for any `@simforge-oss/*` package.
-
-## Local operation
-
-Prerequisites are Node.js, pnpm, ffmpeg, and the Richmond Field Station map bundle. From the repository root:
+Prerequisites are Node.js, pnpm, and ffmpeg. The Richmond Field Station logical map bundle is committed at `assets/richmond-field-station/bundle`. From the repository root:
 
 ```bash
 pnpm install
-pnpm dev
+pnpm dev               # twin server (same as pnpm dev:server)
+pnpm dev:web           # web UI on :5199
 ```
 
-Focused commands:
+Other commands:
 
 ```bash
-pnpm --dir apps/twin-server start
+pnpm test:server
+pnpm test:web
 pnpm --dir apps/twin-server typecheck
-pnpm --dir apps/twin-server test
+make help
 ```
 
-Default ports are configurable:
+`apps/twin-web/.env.development` points the development UI at the deployed twin (`NEXT_PUBLIC_TWIN_URL=wss://twin.path2v2x.net`) and sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/map-bundles/` and `/drive-rigs/` to that host. To use a local twin server instead, set `NEXT_PUBLIC_TWIN_URL=ws://127.0.0.1:8765` (or pass `?twin=ws://127.0.0.1:8765` in the page URL).
+
+### Web UI configuration
+
+`NEXT_PUBLIC_*` values are inlined at build time.
+
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_TWIN_URL` | twin WebSocket origin; the app appends `/twin`, `/drive`, `/camera-feeds` |
+| `NEXT_PUBLIC_TWIN_MAP_MANIFEST_URL` | 3D map manifest, e.g. `/map-bundles/richmond-field-station/3d/manifest.json` |
+| `NEXT_PUBLIC_TWIN_MAP_LANES_URL` | lane topology index, e.g. `/map-bundles/richmond-field-station/topology-index.json.gz` |
+| `NEXT_PUBLIC_TWIN_CAMERA_RIGS_URL` | pole camera rig JSON, e.g. `/drive-rigs/richmond.json` |
+| `NEXT_PUBLIC_TWIN_HOME_URL` | external home link in the header |
+| `TWIN_DEV_UPSTREAM` | development only: proxy `/map-bundles/` and `/drive-rigs/` to this origin |
+| `TWIN_HTTP_ORIGIN` | optional: proxy `/streams/` to this twin HTTP origin |
+
+### Twin server configuration
 
 | Variable | Default | Purpose |
 |---|---:|---|
 | `TWIN_WS_PORT` | `8765` | `/twin`, `/drive`, and `/camera-feeds` WebSockets |
 | `TWIN_HTTP_PORT` | `8090` | health, MJPEG streams, and detection history APIs |
-| `TWIN_MAP_BUNDLE` | `assets/richmond-field-station/bundle` | logical map bundle: `map.xodr`, `topology-index.json.gz`, `signals.geojson.gz`, `derived/{topology-derived,locations}.json.gz` (no 3D tiles; produced by the simforge-oss map pipeline, see `derived/map-intel-build-receipt.json`) |
+| `TWIN_MAP_BUNDLE` | `assets/richmond-field-station/bundle` | logical map bundle: `map.xodr`, `topology-index.json.gz`, `signals.geojson.gz`, `derived/{topology-derived,locations}.json.gz` (no 3D tiles; see `derived/map-intel-build-receipt.json`) |
+| `TWIN_SESSION_EPOCH_SECONDS` | `600` | live world re-root interval |
 | `TWIN_SYNC_LOCAL` | `0` | enable local detection polling |
 | `TWIN_DETECTIONS_URL` | `http://127.0.0.1:8091/detections/latest` | co-perception summary endpoint |
 | `TWIN_POLL_HZ` | `10` | local summary polls per second |
@@ -58,7 +78,8 @@ Default ports are configurable:
 | `TWIN_PUBLIC_HTTP_ORIGIN` | unset | public origin used to advertise absolute history URLs |
 | `TWIN_ARCHIVE_URL_TEMPLATE` | unset | archive MP4 template with `{channel}`, `{start}`, and `{duration}` placeholders |
 | `TWIN_ARCHIVE_OFFSET_SECONDS` | `0` | offset added to replay clip start times to map detection timestamps to archive timestamps |
-| `TWIN_CAMERA_URL_TEMPLATE` | `rtsp://127.0.0.1:8554/{channel}` | ffmpeg input URL template |
+| `TWIN_CAMERA_SOCKET_PATH` | unset | read live camera frames from the co-perception output socket instead of per-channel ffmpeg inputs |
+| `TWIN_CAMERA_URL_TEMPLATE` | `rtsp://127.0.0.1:8554/{channel}` | ffmpeg input URL template when no camera socket is set |
 | `TWIN_LIVE_FEEDS` | `1` | use local live camera inputs; set `0` for recorded replay only |
 
 ## Local detections contract
@@ -93,20 +114,22 @@ and coverage APIs are documented in
 
 ## Camera source contract
 
-`TWIN_CAMERA_URL_TEMPLATE` is substituted once per channel using `ch1` through `ch4`. Examples:
+With `TWIN_CAMERA_SOCKET_PATH` set (path-rfs uses `/tmp/coperception_output.sock`), live frames for all channels are read from the co-perception output socket; no ffmpeg or RTSP relay is involved.
+
+Otherwise `TWIN_CAMERA_URL_TEMPLATE` is substituted once per channel using `ch1` through `ch4`. Examples:
 
 - `rtsp://127.0.0.1:8554/{channel}` for MediaMTX or go2rtc;
 - `http://127.0.0.1:8081/{channel}` for a local HTTP stream source.
 
-ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min), so an upstream camera blip costs seconds of replay rather than minutes. Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`.
+ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min). Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`.
 
 ## Pole camera rigs
 
-`config/drive-rigs/richmond.json` is the calibrated rig for RFS Mast 1 (signal feature 372): per channel heading, mount pitch, mount height, intrinsics and extrinsic corrections, in the shape Studio Drive's Cameras view consumes. It is the durable home for calibration: aim cameras in the Cameras view, use **Copy rig JSON**, and commit the result here. nginx serves it at `/drive-rigs/richmond.json` (see `deploy/nginx-twin.conf`), which is what `NEXT_PUBLIC_DRIVE_CAMERA_RIGS_URL` points at, so the deployed Studio always loads this file rather than its bundled dev fixture.
+`config/drive-rigs/richmond.json` is the calibrated rig for RFS Mast 1 (signal feature 372): per channel heading, mount pitch, mount height, intrinsics and extrinsic corrections. The web UI's camera strip uses it to look through each pole camera. nginx serves it at `/drive-rigs/richmond.json` (see `deploy/nginx-twin.conf`), which is what `NEXT_PUBLIC_TWIN_CAMERA_RIGS_URL` points at; commit calibration changes to this file.
 
 ## path-rfs deployment
 
-On path-rfs the CARLA drive server (`path2v2x/v2x-drive`) owns `:8765`, and `:8090` was the retired perception service's port. The twin therefore runs there with:
+On path-rfs the CARLA drive server (`path2v2x/v2x-drive`) owns `:8765` and `:8090`, so `scripts/systemd/v2x-twin-server.service` runs the twin with:
 
 ```text
 TWIN_WS_PORT=8865
@@ -120,6 +143,7 @@ TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
 TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=mp4
 TWIN_ARCHIVE_OFFSET_SECONDS=0
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
+TWIN_CAMERA_SOCKET_PATH=/tmp/coperception_output.sock
 ```
 
 ### Deploying
@@ -127,34 +151,34 @@ TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 ```bash
 git push origin main
 scripts/deploy.sh                 # twin server, units, nginx vhost
-scripts/deploy.sh --perception    # also restart co-perception
-scripts/deploy.sh --studio        # also pull, build and restart the Studio UI
+scripts/deploy.sh --web           # also build and restart the web UI
+scripts/deploy.sh --perception    # also restart v2x-perception (co-perception)
 scripts/deploy.sh --dry-run       # print the plan
 ```
 
-The script fast-forwards `/home/path/v2x-digital-twin` to `origin/main`,
-installs `scripts/systemd/*.service`, `deploy/v2x-twin-studio.service` and
+The script fast-forwards `/home/path/v2x-digital-twin` to `origin/main`, runs
+`pnpm install --frozen-lockfile` when the lockfile changed, installs
+`scripts/systemd/*.service`, `deploy/v2x-twin-web.service` and
 `deploy/nginx-twin.conf`, restarts `v2x-twin-server` and checks
-`127.0.0.1:8190/health` plus the public `/detections/coverage` route.
-`--studio` fast-forwards the separate `SimForgeinc/simforge-oss` checkout at
-`/home/path/simforge-oss` (main), runs `pnpm --filter @simforge-oss/studio
-build` with `/etc/v2x-twin-studio.env` exported (its `NEXT_PUBLIC_*` values are
-inlined at build time) and restarts `v2x-twin-studio`, which serves the build
-with `next start` on loopback `:5199` after running migrations and seed.
+`127.0.0.1:8190/health` plus the public `/detections/coverage` route. `--web`
+builds `apps/twin-web` with `/etc/v2x-twin-web.env` exported, then restarts
+`v2x-twin-web` (`next start` on loopback `:5199`) and checks the public `/`.
 Rollback: check out the previous commit on `main`, push, redeploy.
 
 `v2x-twin-server.service` has `StateDirectory=v2x-twin`, which creates
 `/var/lib/v2x-twin` (the 72-hour detection history) owned by the `path`
-service user. The path-rfs co-perception process uses
-`config/perception/pipeline.yaml` and `scripts/systemd/v2x-perception.service`;
-installation, health checks, and measured resource use are documented in
-[docs/perception-on-path-rfs.md](docs/perception-on-path-rfs.md).
+service user. Co-perception installation, health checks, and measured resource
+use are documented in [docs/perception-on-path-rfs.md](docs/perception-on-path-rfs.md).
 
 `deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, proxies health,
 camera streams, and `/detections/` to `:8190`, exposes MediaMTX playback under
-`/archive/`, serves the legacy map alias under `/map/`, and proxies Studio
-Drive to loopback `:5199`. First-time setup: copy `deploy/studio.env.example`
-to `/etc/v2x-twin-studio.env`, symlink the vhost into `sites-enabled`, then run
-`scripts/deploy.sh --perception --studio`.
+`/archive/`, serves browser map bundles (3D tiles, lane topology, signals) at
+`/map-bundles/` from `/var/www/v2x-twin-map-bundles/`, serves the camera rig at
+`/drive-rigs/richmond.json`, and proxies everything else to the web UI on
+loopback `:5199`.
 
-Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md). The Studio migration plan is in [docs/twin-on-studio-plan.md](docs/twin-on-studio-plan.md).
+First-time setup: copy `deploy/twin-web.env.example` to `/etc/v2x-twin-web.env`,
+place the map bundles under `/var/www/v2x-twin-map-bundles/`, symlink the vhost
+into `sites-enabled`, then run `scripts/deploy.sh --web`.
+
+Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).

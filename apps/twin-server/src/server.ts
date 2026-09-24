@@ -179,7 +179,7 @@ export function startServers(deps: DriveDeps): TwinServers {
       return;
     }
     if (url.pathname === '/health') {
-      jsonResponse(res, 200, { status: 'ok', engine: 'simforge-oss', mode: sync.currentMode(), feeds: mjpeg.modes() });
+      jsonResponse(res, 200, { status: 'ok', engine: 'v2x-twin', mode: sync.currentMode(), feeds: mjpeg.modes() });
       return;
     }
     res.writeHead(404, { 'Content-Type': 'application/json' });
