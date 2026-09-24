@@ -114,7 +114,12 @@ export function startServers(deps: DriveDeps): TwinServers {
   const mjpeg = new MjpegService(
     config.footageMp4,
     config.mjpegFps,
-    config.liveFeeds ? { urlTemplate: config.cameraUrlTemplate } : null,
+    config.liveFeeds
+      ? {
+          urlTemplate: config.cameraUrlTemplate,
+          ...(config.cameraSocketPath ? { directSocketPath: config.cameraSocketPath } : {}),
+        }
+      : null,
   );
   mjpeg.start();
   const httpServer = http.createServer((req, res) => {

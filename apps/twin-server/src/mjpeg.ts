@@ -2,8 +2,17 @@
  * MJPEG camera feeds from one local stream per channel, with recorded footage
  * as a fallback. TWIN_CAMERA_URL_TEMPLATE supplies the ffmpeg input URL and
  * substitutes `{channel}` with ch1..ch4. RTSP inputs use TCP transport.
+ *
+ * TWIN_CAMERA_SOCKET_PATH, when set, replaces the ffmpeg/RTSP live path
+ * entirely: frames are read directly off co-perception's own Unix-socket
+ * broadcast (see co_perception/common/broadcast.py for the wire format),
+ * one connection shared across all four channels, no ffmpeg, no RTSP, no
+ * MediaMTX involved. This is intentionally independent of the recording
+ * pipeline (which still runs its own separate relay into MediaMTX) -- the
+ * live display and the 72h archive no longer share any component.
  */
 import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import net from 'node:net';
 import type { Readable } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 import { WebSocket } from 'ws';
@@ -110,6 +119,10 @@ function stateMessage(modes: Readonly<Record<string, FeedMode>>): string {
 
 export interface LiveFeedConfig {
   readonly urlTemplate: string;
+  /** When set, live frames come directly from co-perception's broadcast
+   * socket instead of ffmpeg/RTSP -- urlTemplate is then unused for the
+   * live path (replay fallback still uses ffmpeg on recorded footage). */
+  readonly directSocketPath?: string;
 }
 
 interface ChannelState {
@@ -134,6 +147,15 @@ interface ChannelState {
 const LIVE_RETRY_BASE_MS = 10_000;
 const LIVE_RETRY_MAX_MS = 120_000;
 
+/** Reconnect delay for the direct co-perception socket (no ffmpeg process
+ * lifecycle to key off, so this is just a fixed short backoff). */
+const DIRECT_SOCKET_RECONNECT_MS = 2_000;
+
+/** Wire format, see co_perception/common/broadcast.py: 1-byte msg_type,
+ * 4-byte big-endian payload length, then the payload. */
+const DIRECT_SOCKET_HEADER_BYTES = 5;
+const MSG_ANNOTATED_FRAME = 1;
+
 export class MjpegService {
   private readonly footage: string;
   private readonly fps: number;
@@ -143,6 +165,10 @@ export class MjpegService {
   private stopped = false;
 
   private readonly live: LiveFeedConfig | null;
+
+  private directSocket: net.Socket | null = null;
+  private directSocketBuffer: Buffer = Buffer.alloc(0);
+  private directSocketRetryTimer: NodeJS.Timeout | null = null;
 
   constructor(footage: string, fps: number, live: LiveFeedConfig | null = null) {
     this.footage = footage;
@@ -158,14 +184,76 @@ export class MjpegService {
   }
 
   start(): void {
+    const useDirectSocket = Boolean(this.live?.directSocketPath);
     for (const channel of CHANNELS) {
       const state: ChannelState = { process: null, buffer: Buffer.alloc(0), latest: null, revision: 0, clients: new Set(), mode: 'starting', targetMode: null, liveRetryTimer: null, liveUnavailableUntil: 0, liveFailures: 0 };
       this.channels.set(channel, state);
-      void this.launch(channel, state);
+      // Direct-socket mode: frames arrive out-of-band via connectDirectSocket
+      // below, shared across all four channels -- no per-channel process.
+      if (!useDirectSocket) void this.launch(channel, state);
+    }
+    if (useDirectSocket) {
+      console.log(`[twin-server] mjpeg: live feed source is co-perception socket ${this.live!.directSocketPath} (no ffmpeg, no RTSP, no MediaMTX)`);
+      this.connectDirectSocket(this.live!.directSocketPath!);
     }
     this.pushTimer = setInterval(() => this.pushFrames(), 1000 / this.fps);
   }
 
+  private connectDirectSocket(socketPath: string): void {
+    if (this.stopped) return;
+    this.directSocketBuffer = Buffer.alloc(0);
+    const sock = net.createConnection({ path: socketPath });
+    this.directSocket = sock;
+
+    sock.on('connect', () => {
+      console.log(`[twin-server] mjpeg: connected to co-perception socket ${socketPath}`);
+    });
+
+    sock.on('data', (chunk: Buffer) => {
+      this.directSocketBuffer = this.directSocketBuffer.length === 0 ? chunk : Buffer.concat([this.directSocketBuffer, chunk]);
+      this.drainDirectSocketBuffer();
+    });
+
+    sock.on('error', (err: Error) => {
+      console.warn(`[twin-server] mjpeg: co-perception socket error: ${err.message}`);
+    });
+
+    sock.on('close', () => {
+      if (this.stopped) return;
+      this.directSocket = null;
+      if (this.directSocketRetryTimer) clearTimeout(this.directSocketRetryTimer);
+      this.directSocketRetryTimer = setTimeout(() => this.connectDirectSocket(socketPath), DIRECT_SOCKET_RECONNECT_MS);
+    });
+  }
+
+  /** Annotated frames (msg_type 1) carry a 1-byte channel index (0..3) then
+   * raw JPEG bytes. Other message types on this socket (raw frames,
+   * detections JSON) are present but not relevant to the live display, so
+   * they're skipped. A dropped/paused co-perception tick simply means no
+   * new message arrives -- the last frame stays on screen, frozen, rather
+   * than the feed disconnecting. */
+  private drainDirectSocketBuffer(): void {
+    for (;;) {
+      if (this.directSocketBuffer.length < DIRECT_SOCKET_HEADER_BYTES) return;
+      const msgType = this.directSocketBuffer.readUInt8(0);
+      const payloadLen = this.directSocketBuffer.readUInt32BE(1);
+      const totalLen = DIRECT_SOCKET_HEADER_BYTES + payloadLen;
+      if (this.directSocketBuffer.length < totalLen) return;
+      const payload = this.directSocketBuffer.subarray(DIRECT_SOCKET_HEADER_BYTES, totalLen);
+      this.directSocketBuffer = this.directSocketBuffer.subarray(totalLen);
+
+      if (msgType === MSG_ANNOTATED_FRAME && payload.length >= 1) {
+        const channel = CHANNELS[payload.readUInt8(0)];
+        const jpeg = payload.subarray(1);
+        const state = channel ? this.channels.get(channel) : undefined;
+        if (state) {
+          state.latest = jpeg;
+          state.revision += 1;
+          state.mode = 'live';
+        }
+      }
+    }
+  }
 
   private launch(channel: Channel, state: ChannelState): void {
     if (this.stopped) return;
@@ -281,6 +369,14 @@ export class MjpegService {
     if (this.pushTimer) {
       clearInterval(this.pushTimer);
       this.pushTimer = null;
+    }
+    if (this.directSocketRetryTimer) {
+      clearTimeout(this.directSocketRetryTimer);
+      this.directSocketRetryTimer = null;
+    }
+    if (this.directSocket) {
+      this.directSocket.destroy();
+      this.directSocket = null;
     }
     for (const state of this.channels.values()) {
       clearTimeout(state.liveRetryTimer ?? undefined);

@@ -22,6 +22,7 @@ Environment=TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
 Environment="TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=mp4"
 Environment=TWIN_ARCHIVE_OFFSET_SECONDS=0
 Environment=TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
+Environment=TWIN_CAMERA_SOCKET_PATH=/tmp/coperception_output.sock
 ExecStart=/usr/bin/pnpm --dir apps/twin-server start
 Restart=always
 RestartSec=5

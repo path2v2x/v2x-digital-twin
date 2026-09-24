@@ -53,6 +53,8 @@ export interface TwinConfig {
   readonly mjpegFps: number;
   readonly liveFeeds: boolean;
   readonly cameraUrlTemplate: string;
+  /** When set, live camera frames are read from co-perception's broadcast socket instead of RTSP. */
+  readonly cameraSocketPath: string;
 }
 
 export function loadConfig(): TwinConfig {
@@ -88,5 +90,6 @@ export function loadConfig(): TwinConfig {
     mjpegFps: num('TWIN_MJPEG_FPS', 10),
     liveFeeds: flag('TWIN_LIVE_FEEDS', true),
     cameraUrlTemplate: str('TWIN_CAMERA_URL_TEMPLATE', 'rtsp://127.0.0.1:8554/{channel}'),
+    cameraSocketPath: str('TWIN_CAMERA_SOCKET_PATH', ''),
   };
 }
