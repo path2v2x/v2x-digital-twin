@@ -32,7 +32,8 @@ export interface TwinConfig {
   readonly camerasJson: string;
   readonly footageMp4: string;
   readonly tickDt: number;
-  readonly horizonSeconds: number;
+  /** Engine session age at which the world is re-rooted onto a fresh session. */
+  readonly sessionEpochSeconds: number;
   readonly evaWarningDistanceM: number;
   readonly syncLocal: boolean;
   readonly detectionsUrl: string;
@@ -69,7 +70,7 @@ export function loadConfig(): TwinConfig {
       path.join(REPO_ROOT, 'assets', 'richmond-field-station', 'map', 'richmond-field-station_20260410-185647.mp4'),
     ),
     tickDt: 0.05,
-    horizonSeconds: num('TWIN_HORIZON_SECONDS', 4 * 3600),
+    sessionEpochSeconds: num('TWIN_SESSION_EPOCH_SECONDS', 600),
     evaWarningDistanceM: num('TWIN_EVA_WARNING_DISTANCE_M', 20),
     syncLocal: flag('TWIN_SYNC_LOCAL', false),
     detectionsUrl: str('TWIN_DETECTIONS_URL', 'http://127.0.0.1:8091/detections/latest'),

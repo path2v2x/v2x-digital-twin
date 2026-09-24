@@ -14,9 +14,9 @@
  *    one-tick latency); preview/targetSpeed overrides steer ghosts.
  *  - timedPolyline routes make time own motion (trajectory playback,
  *    keyframes at absolute sim time).
- *  - Acts must never be issued at t <= 0 (the warmup tick replays with the
- *    act timeline on structural rebuilds); the server advances one tick
- *    before accepting clients.
+ *  - The session runs in live mode: spawn/despawn mutate the running engine
+ *    instead of rebuilding and replaying the whole session from t = 0, which
+ *    in clip mode made every ghost spawn cost the server's full uptime.
  */
 import {
   buildMapControlPlan,
@@ -35,7 +35,7 @@ import {
   type RouteSpec,
   type SimScenarioInput,
 } from '@simforge-oss/engine';
-import { WorldSession, type SpawnRequest, type TruthSubscription, type WorldActorState } from '@simforge-oss/training-env';
+import { WorldSession, type SpawnRequest, type TruthSubscription, type WorldActorState, type WorldCommand } from '@simforge-oss/training-env';
 import type { LegacyFlatEarthFrame } from '@simforge-oss/maps';
 import { flatEarthFromXodr, sceneHeadingFromLegacyYawDeg, type SceneXZ } from './geo.js';
 import path from 'node:path';
@@ -74,6 +74,10 @@ export interface TruthSink {
 }
 
 const FREEFORM_ROUTE_LENGTH_M = 10_000;
+/** Delay before retrying a re-root that had to be deferred. */
+const REROOT_RETRY_S = 30;
+
+type WorldAction = Extract<WorldCommand, { kind: 'act' }>['action'];
 
 /** Map a drive-protocol blueprint id onto an engine actor kind. */
 export function kindForBlueprint(blueprint: string): ActorKind {
@@ -105,9 +109,20 @@ export class TwinWorld {
   readonly bundle: MapBundle;
   readonly frame: LegacyFlatEarthFrame;
   readonly xodrSha256: string;
-  readonly session: WorldSession;
   readonly dt: number;
   readonly meta = new Map<string, ActorMeta>();
+  private current: WorldSession;
+  private readonly baseInput: SimScenarioInput;
+  private readonly epochSeconds: number;
+  /** Session time of the current epoch at which the next re-root is attempted. */
+  private nextRerootAtS: number;
+  /** World time at which the current session's clock reads zero. */
+  private epochOffsetS = 0;
+  private actorSerial = 0;
+  /** Spawn request of every present actor, re-materialized when the session is re-rooted. */
+  private readonly specs = new Map<string, SpawnRequest>();
+  /** Latest zero-order-hold action per actor, re-issued after a re-root. */
+  private readonly acts = new Map<string, WorldAction>();
   private readonly sinks = new Set<{ sink: TruthSink; sub: TruthSubscription }>();
   private readonly tickHooks = new Set<(tS: number) => void>();
   private timer: NodeJS.Timeout | null = null;
@@ -116,12 +131,27 @@ export class TwinWorld {
   private coveredSpawnPoints: Array<{ x: number; z: number; headingRad: number }> = [];
   private tileCoverage: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
 
-  private constructor(bundle: MapBundle, frame: LegacyFlatEarthFrame, xodrSha256: string, session: WorldSession, dt: number) {
+  private constructor(bundle: MapBundle, frame: LegacyFlatEarthFrame, xodrSha256: string, baseInput: SimScenarioInput, dt: number, epochSeconds: number) {
     this.bundle = bundle;
     this.frame = frame;
     this.xodrSha256 = xodrSha256;
-    this.session = session;
+    this.baseInput = baseInput;
     this.dt = dt;
+    this.epochSeconds = epochSeconds;
+    this.nextRerootAtS = epochSeconds;
+    this.current = this.openSession();
+  }
+
+  /** The engine session of the current epoch; replaced whenever the world is re-rooted. */
+  get session(): WorldSession {
+    return this.current;
+  }
+
+  private openSession(): WorldSession {
+    const session = new WorldSession({ input: this.baseInput, graph: this.bundle.graph, mode: 'live' });
+    // Move past t = 0 before any client can issue an act.
+    session.advance(1);
+    return session;
   }
 
   static async create(config: TwinConfig): Promise<TwinWorld> {
@@ -144,12 +174,9 @@ export class TwinWorld {
       signalPrograms: plan.signalPrograms,
       operationalConditions: {},
     });
-    const session = new WorldSession({ input, graph: bundle.graph, horizonSeconds: config.horizonSeconds });
-    const world = new TwinWorld(bundle, frame, world0Sha(bundle), session, config.tickDt);
+    const world = new TwinWorld(bundle, frame, world0Sha(bundle), input, config.tickDt, config.sessionEpochSeconds);
     world.tileCoverage = TwinWorld.readTileCoverage(config.mapBundleDir);
     world.buildSpawnPoints();
-    // Move past t = 0 before any client can issue an act (rebuild determinism).
-    session.advance(1);
     return world;
   }
 
@@ -224,8 +251,8 @@ export class TwinWorld {
 
   /** One deterministic step of the server loop: advance, hooks, truth flush. */
   advanceTicks(ticks: number): void {
-    this.session.advance(ticks);
-    const tS = this.session.time();
+    this.current.advance(ticks);
+    const tS = this.time();
     for (const hook of this.tickHooks) {
       try {
         hook(tS);
@@ -234,6 +261,7 @@ export class TwinWorld {
       }
     }
     this.flushTruth();
+    if (this.current.time() >= this.nextRerootAtS) this.reroot();
   }
 
   stop(): void {
@@ -252,7 +280,7 @@ export class TwinWorld {
   /* ------------------------------------------------------- truth fan-out */
 
   subscribe(sink: TruthSink): () => void {
-    const entry = { sink, sub: this.session.subscribeTruth({ capacity: 256 }) };
+    const entry = { sink, sub: this.current.subscribeTruth({ capacity: 256 }) };
     this.sinks.add(entry);
     return () => {
       this.sinks.delete(entry);
@@ -268,16 +296,17 @@ export class TwinWorld {
 
   /* ------------------------------------------------------------ commands */
 
+  /** World time, continuous across re-roots. */
   time(): number {
-    return this.session.time();
+    return this.epochOffsetS + this.current.time();
   }
 
   actorState(id: string): WorldActorState | undefined {
-    return this.session.snapshot().actors.find((a) => a.id === id && a.present);
+    return this.current.snapshot().actors.find((a) => a.id === id && a.present);
   }
 
   presentActors(): WorldActorState[] {
-    return this.session.snapshot().actors.filter((a) => a.present);
+    return this.current.snapshot().actors.filter((a) => a.present);
   }
 
   /**
@@ -294,17 +323,7 @@ export class TwinWorld {
     meta?: Partial<Pick<ActorMeta, 'geofenceRadiusM' | 'geofenceMessage' | 'ownerSession' | 'name'>>;
   }): { ok: true; id: string } | { ok: false; error: string } {
     const { pose } = options;
-    const route: RouteSpec = {
-      kind: 'polyline',
-      points: [
-        { x: pose.x, z: pose.z },
-        {
-          x: pose.x + FREEFORM_ROUTE_LENGTH_M * Math.cos(-pose.headingRad),
-          z: pose.z + FREEFORM_ROUTE_LENGTH_M * -Math.sin(-pose.headingRad),
-        },
-      ],
-    };
-    return this.spawn({ ...options, spawn: { kind: options.kind, pose, speedMps: options.speedMps ?? 0, snapToLane: false, route, ...(options.dims ? { dims: options.dims } : {}) } });
+    return this.spawn({ ...options, spawn: { kind: options.kind, pose, speedMps: options.speedMps ?? 0, snapToLane: false, route: freeformRoute(pose), ...(options.dims ? { dims: options.dims } : {}) } });
   }
 
   spawn(options: {
@@ -314,11 +333,14 @@ export class TwinWorld {
     spawn: SpawnRequest;
     meta?: Partial<Pick<ActorMeta, 'geofenceRadiusM' | 'geofenceMessage' | 'ownerSession' | 'name'>>;
   }): { ok: true; id: string } | { ok: false; error: string } {
-    const outcome = this.session.applyCommand('twin', ++commandSeq, { kind: 'spawn', spawn: options.spawn });
+    // Ids are allocated here, never by the engine, so they stay unique across re-roots.
+    const spawn: SpawnRequest = { ...options.spawn, id: options.spawn.id ?? `tw:${++this.actorSerial}` };
+    const outcome = this.current.applyCommand('twin', ++commandSeq, { kind: 'spawn', spawn });
     if (!outcome.ok || !outcome.actorIds?.length) {
       return { ok: false, error: outcome.error ?? 'spawn rejected' };
     }
     const id = outcome.actorIds[0]!;
+    this.specs.set(id, spawn);
     const blueprint = options.blueprint;
     this.meta.set(id, {
       id,
@@ -335,19 +357,16 @@ export class TwinWorld {
   }
 
   despawn(id: string): boolean {
-    const outcome = this.session.applyCommand('twin', ++commandSeq, { kind: 'despawn', actorId: id });
+    const outcome = this.current.applyCommand('twin', ++commandSeq, { kind: 'despawn', actorId: id });
     this.meta.delete(id);
+    this.specs.delete(id);
+    this.acts.delete(id);
     return outcome.ok;
   }
 
   /** Keyboard control (zero-order hold until the next control message). */
   actControl(id: string, control: { throttle: number; brake: number; steer: number }, reverse: boolean): boolean {
-    const outcome = this.session.applyCommand('twin', ++commandSeq, {
-      kind: 'act',
-      actorId: id,
-      action: { control, motionDirection: reverse ? -1 : 1 },
-    });
-    return outcome.ok;
+    return this.act(id, { control, motionDirection: reverse ? -1 : 1 });
   }
 
   /** Ghost steering: chase a scene-space target at a speed (zero-order hold). */
@@ -357,16 +376,20 @@ export class TwinWorld {
     const local = localFromScene(target);
     const cur = localFromScene({ x: state.x, z: state.z });
     const headingRad = Math.atan2(local.y - cur.y, local.x - cur.x);
-    const outcome = this.session.applyCommand('twin', ++commandSeq, {
-      kind: 'act',
-      actorId: id,
-      action: { previewPoint: local, previewHeadingRad: headingRad, targetSpeedMps },
-    });
-    return outcome.ok;
+    return this.act(id, { previewPoint: local, previewHeadingRad: headingRad, targetSpeedMps });
   }
 
   actRelease(id: string): void {
-    this.session.applyCommand('twin', ++commandSeq, { kind: 'act', actorId: id, action: null });
+    this.act(id, null);
+  }
+
+  private act(id: string, action: WorldAction): boolean {
+    const outcome = this.current.applyCommand('twin', ++commandSeq, { kind: 'act', actorId: id, action });
+    if (outcome.ok) {
+      if (action === null) this.acts.delete(id);
+      else this.acts.set(id, action);
+    }
+    return outcome.ok;
   }
 
   /** Spawn a timed-route actor whose keyframes are seconds-from-now offsets. */
@@ -378,7 +401,8 @@ export class TwinWorld {
     dims?: Dims;
     meta?: Partial<Pick<ActorMeta, 'ownerSession' | 'name'>>;
   }): { ok: true; id: string } | { ok: false; error: string } {
-    const t0 = this.time() + this.dt;
+    // Timed-route keyframes are times on the current session's clock.
+    const t0 = this.current.time() + this.dt;
     const first = options.points[0]!;
     const second = options.points.find((p) => Math.hypot(p.x - first.x, p.z - first.z) > 0.5) ?? first;
     const headingRad = second === first ? 0 : -Math.atan2(-(second.z - first.z), second.x - first.x);
@@ -418,6 +442,108 @@ export class TwinWorld {
   poseFromLegacy(x: number, y: number, yawDeg: number): { x: number; z: number; headingRad: number } {
     return { x, z: y, headingRad: sceneHeadingFromLegacyYawDeg(yawDeg) };
   }
+
+  /**
+   * Start a fresh session that holds only the actors present now, under their
+   * existing ids and current motion. A live session keeps every actor it ever
+   * spawned, so each spawn and despawn slows as the world ages; re-rooting
+   * bounds that cost. Deferred while a lane-routed actor is mid-route.
+   */
+  private reroot(): void {
+    const previous = this.current;
+    const elapsedS = previous.time();
+    const present = previous.snapshot().actors.filter((actor) => actor.present);
+    const next = this.openSession();
+    const shiftS = next.time() - elapsedS;
+    const carried: Array<{ spawn: SpawnRequest; required: boolean }> = [];
+    for (const actor of present) {
+      const spec = this.specs.get(actor.id);
+      const spawn = spec ? rematerialize(spec, actor, shiftS, next.time()) : null;
+      if (!spawn) {
+        this.nextRerootAtS = elapsedS + REROOT_RETRY_S;
+        return;
+      }
+      carried.push({ spawn, required: this.meta.get(actor.id)?.category !== 'ghost' });
+    }
+
+    const kept = new Map<string, SpawnRequest>();
+    for (const { spawn, required } of carried) {
+      const outcome = next.applyCommand('twin', ++commandSeq, { kind: 'spawn', spawn });
+      if (outcome.ok) {
+        kept.set(spawn.id!, spawn);
+      } else if (required) {
+        console.warn(`[twin-world] re-root deferred: ${spawn.id} could not be carried over (${outcome.error ?? 'spawn rejected'})`);
+        this.nextRerootAtS = elapsedS + REROOT_RETRY_S;
+        return;
+      }
+    }
+    for (const [id, action] of this.acts) {
+      if (kept.has(id)) next.applyCommand('twin', ++commandSeq, { kind: 'act', actorId: id, action });
+    }
+
+    for (const entry of this.sinks) {
+      entry.sub.unsubscribe();
+      entry.sub = next.subscribeTruth({ capacity: 256 });
+    }
+    this.epochOffsetS -= shiftS;
+    this.current = next;
+    this.nextRerootAtS = this.epochSeconds;
+    this.specs.clear();
+    for (const [id, spawn] of kept) this.specs.set(id, spawn);
+    for (const id of [...this.acts.keys()]) if (!kept.has(id)) this.acts.delete(id);
+    for (const id of [...this.meta.keys()]) if (!kept.has(id)) this.meta.delete(id);
+    console.log(`[twin-world] session re-rooted at t=${this.time().toFixed(1)}s: ${kept.size} actors carried over, ${present.length - kept.size} ghosts dropped`);
+  }
+}
+
+/** A 10 km straight polyline from the pose along its heading, so the engine never retires the actor. */
+function freeformRoute(pose: { x: number; z: number; headingRad: number }): RouteSpec {
+  return {
+    kind: 'polyline',
+    points: [
+      { x: pose.x, z: pose.z },
+      {
+        x: pose.x + FREEFORM_ROUTE_LENGTH_M * Math.cos(-pose.headingRad),
+        z: pose.z + FREEFORM_ROUTE_LENGTH_M * -Math.sin(-pose.headingRad),
+      },
+    ],
+  };
+}
+
+/**
+ * The spawn request that continues `actor` in a fresh session whose clock is
+ * `shiftS` ahead of the old one (negative: it restarts near zero). Null when
+ * the actor follows a lane route, which cannot be resumed mid-route.
+ */
+function rematerialize(spec: SpawnRequest, actor: WorldActorState, shiftS: number, nowS: number): SpawnRequest | null {
+  const pose = { x: actor.x, z: actor.z, headingRad: actor.headingRad };
+  const carried = {
+    id: actor.id,
+    kind: spec.kind,
+    pose,
+    snapToLane: false,
+    ...(spec.dims ? { dims: spec.dims } : {}),
+    ...(spec.tags ? { tags: spec.tags } : {}),
+    ...(spec.cruiseSpeedMps !== undefined ? { cruiseSpeedMps: spec.cruiseSpeedMps } : {}),
+  };
+  if (spec.static) {
+    return { ...carried, static: true, speedMps: 0, route: { kind: 'polyline', points: [{ x: pose.x, z: pose.z }] } };
+  }
+  const route = spec.route;
+  if (route?.kind === 'timedPolyline') {
+    const ahead = route.points.map((point) => ({ ...point, timeS: point.timeS + shiftS })).filter((point) => point.timeS > nowS);
+    return {
+      ...carried,
+      speedMps: 0,
+      route: ahead.length > 0
+        ? { kind: 'timedPolyline', points: [{ timeS: nowS, x: pose.x, z: pose.z }, ...ahead] }
+        : { kind: 'polyline', points: [{ x: pose.x, z: pose.z }] },
+    };
+  }
+  if (route?.kind === 'polyline' && spec.snapToLane === false) {
+    return { ...carried, speedMps: actor.speedMps, route: freeformRoute(pose) };
+  }
+  return null;
 }
 
 function readJsonArtifact(file: string): unknown {
