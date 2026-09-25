@@ -1,13 +1,13 @@
 # V2X Digital Twin
 
-Digital twin for the Richmond Field Station V2X deployment. The twin server owns simulation truth, mirrors detections from the local co-perception service, records detection history for replay, and serves drive control, truth frames, and camera feeds. The web UI renders the live world, looks through the pole cameras, replays history, and authors scenarios. CARLA is not used by this repository or its runtime.
+Digital twin for the Richmond Field Station V2X deployment. The twin server owns simulation truth, mirrors detections from the local co-perception service, records detection history for replay, and serves drive control, truth frames, and camera feeds. The web UI picks a recorded window of up to 60 s from the camera archive and detection history, then simulates it in the browser: recorded detections become read-only actors, the pole-camera footage plays in sync, and the user adds their own actors. CARLA is not used by this repository or its runtime.
 
 ## Architecture
 
 | Component | Responsibility | Default interface |
 |---|---|---|
 | `apps/twin-server` | Shared simulation world, drive commands, truth publication, 72-hour detection history/replay, local detection mirroring, camera relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/`, `/detections/` |
-| `apps/twin-web` | Operator UI (Next.js): live world view, right-hand camera strip that looks through the pole cameras, top-bar timeline with Live and replay, scenario editor with actor library and bottom actor timeline | HTTP `:5199` |
+| `apps/twin-web` | Operator UI (Next.js), two views. Pick: per-camera timeline of detection density and recording gaps (zoom 20 s–12 h, ±12 h paging, click to scrub, drag to select ≤60 s), camera strip and look-through following the playhead. Edit: scenario editor over the selected window, recorded actors replayed by an in-browser simulation alongside user-placed actors, archive footage in sync with play/stop | HTTP `:5199` |
 | `apps/dev-console` | Low-level `/drive` protocol console | Vite development server |
 
 `path2v2x/co-perception` is the only perception implementation. It is a separate repository and process.
@@ -46,7 +46,7 @@ pnpm --dir apps/twin-server typecheck
 make help
 ```
 
-`apps/twin-web/.env.development` points the development UI at the deployed twin (`NEXT_PUBLIC_TWIN_URL=wss://twin.path2v2x.net`) and sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/map-bundles/` and `/drive-rigs/` to that host. To use a local twin server instead, set `NEXT_PUBLIC_TWIN_URL=ws://127.0.0.1:8765` (or pass `?twin=ws://127.0.0.1:8765` in the page URL).
+`apps/twin-web/.env.development` sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/map-bundles/`, `/catalog/`, `/drive-rigs/`, `/detections/` and `/archive/` to that host; in development, absolute archive URLs advertised by the host are rewritten to those same-origin paths. The UI talks to the twin only over HTTP (`/detections/replay-config`, `/detections/coverage`, `/detections/history`, `/archive/`); `?at=<ISO>` presets the playhead.
 
 ### Web UI configuration
 
@@ -54,13 +54,11 @@ make help
 
 | Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_TWIN_URL` | twin WebSocket origin; the app appends `/twin`, `/drive`, `/camera-feeds` |
 | `NEXT_PUBLIC_TWIN_MAP_MANIFEST_URL` | 3D map manifest, e.g. `/map-bundles/richmond-field-station/3d/manifest.json` |
 | `NEXT_PUBLIC_TWIN_MAP_LANES_URL` | lane topology index, e.g. `/map-bundles/richmond-field-station/topology-index.json.gz` |
 | `NEXT_PUBLIC_TWIN_CAMERA_RIGS_URL` | pole camera rig JSON, e.g. `/drive-rigs/richmond.json` |
 | `NEXT_PUBLIC_TWIN_HOME_URL` | external home link in the header |
-| `TWIN_DEV_UPSTREAM` | development only: proxy `/map-bundles/` and `/drive-rigs/` to this origin |
-| `TWIN_HTTP_ORIGIN` | optional: proxy `/streams/` to this twin HTTP origin |
+| `TWIN_DEV_UPSTREAM` | development only: proxy `/map-bundles/`, `/catalog/`, `/drive-rigs/`, `/detections/` and `/archive/` to this origin |
 
 ### Twin server configuration
 
@@ -121,7 +119,7 @@ Otherwise `TWIN_CAMERA_URL_TEMPLATE` is substituted once per channel using `ch1`
 - `rtsp://127.0.0.1:8554/{channel}` for MediaMTX or go2rtc;
 - `http://127.0.0.1:8081/{channel}` for a local HTTP stream source.
 
-ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min). Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`.
+ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min). Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`. The web UI does not use these live feeds; it plays MediaMTX recordings through `/archive/`.
 
 ## Pole camera rigs
 

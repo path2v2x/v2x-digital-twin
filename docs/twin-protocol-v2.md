@@ -16,6 +16,7 @@
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/coverage` | bucketed historical detection availability |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/history` | timestamp-ordered historical detections |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/objects` | per-object summaries over a time range |
+| HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/replay-config` | retention, archive URL templates and georeference for browser-side replay |
 
 The default ports are 8765 and 8090. `TWIN_WS_PORT` and `TWIN_HTTP_PORT` override them. path-rfs uses 8865 and 8190 because the drive application owns the default ports.
 
@@ -139,10 +140,18 @@ uses this route for its event list.
 
 `GET /detections/coverage?start=<ISO>&end=<ISO>&bucket=<seconds>` returns
 `{start,end,bucket_seconds,buckets}`. Each bucket contains
-`{start,detections,objects}`, including empty buckets. The default bucket is
-300 seconds, the minimum is 10 seconds, and requests over 2000 buckets return
-HTTP 400. All three detection routes return JSON errors with HTTP 400 for
+`{start,detections,objects}`, including empty buckets. With `by=camera` each
+bucket also carries `cameras: {chN: {detections, objects}}` for the cameras
+seen in it. The default bucket is 300 seconds, the minimum is 1 second, and
+requests over 2000 buckets return HTTP 400. All three detection routes return JSON errors with HTTP 400 for
 invalid parameters.
+
+`GET /detections/replay-config` returns
+`{retention_hours, history_available, archive_url_template,
+archive_list_url_template, archive_offset_seconds, georeference}`. The archive
+templates are the same as in `twin_hello`; `georeference` is the map's PROJ
+string (from the OpenDRIVE header), which the web UI uses to place recorded
+detections in the scene frame without a `/twin` connection.
 
 ## Camera feeds
 

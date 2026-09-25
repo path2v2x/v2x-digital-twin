@@ -8,8 +8,8 @@ vendored packages.
 
 | Surface | State |
 |---|---|
-| `apps/twin-server` | Active on path-rfs (`v2x-twin-server`, WS `:8865`, HTTP `:8190`); shared live world re-rooted every 600 s, `/twin`, `/drive`, `/camera-feeds`, `/streams/`, local detection sync, 72-hour history and replay |
-| `apps/twin-web` | Active on path-rfs (`v2x-twin-web`, loopback `:5199`) behind `twin.path2v2x.net`; live world view, pole-camera strip, Live/replay timeline, scenario editor |
+| `apps/twin-server` | Active on path-rfs (`v2x-twin-server`, WS `:8865`, HTTP `:8190`); shared live world re-rooted every 600 s, `/twin`, `/drive`, `/camera-feeds`, `/streams/` (used by the dev console, not the web UI), local detection sync, 72-hour history, `/detections/replay-config` |
+| `apps/twin-web` | Active on path-rfs (`v2x-twin-web`, loopback `:5199`) behind `twin.path2v2x.net`; pick a ≤60 s recorded window on a per-camera timeline, then simulate it in the browser with recorded actors, synced archive footage and user-placed actors (no live mode) |
 | `apps/dev-console` | Developer `/drive` protocol console |
 | `path2v2x/co-perception` | External and authoritative for live detections (`:8091`) and live camera frames (`/tmp/coperception_output.sock`); currently served on path-rfs by the `jpark-co-perception` service, with this repository's `v2x-perception` unit stopped |
 
