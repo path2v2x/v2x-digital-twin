@@ -36,9 +36,10 @@ export class TwinConnection {
     const camera = this.cameraId !== null ? cameras.cameras.find((c) => c.id === this.cameraId) ?? null : null;
     const publicOrigin = this.config.publicHttpOrigin.replace(/\/+$/, '');
     const replayUrls = publicOrigin === ''
-      ? { archive_url_template: null, coverage_url: null, history_url: null }
+      ? { archive_url_template: null, archive_list_url_template: null, coverage_url: null, history_url: null }
       : {
           archive_url_template: this.config.archiveUrlTemplate || null,
+          archive_list_url_template: this.config.archiveListUrlTemplate || null,
           coverage_url: `${publicOrigin}/detections/coverage`,
           history_url: `${publicOrigin}/detections/history`,
         };

@@ -483,8 +483,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                           feeds={cameraFeeds}
                           feedState={feedStates[activeCamera.camera.id] ?? "starting"}
                           clock={clock}
-                          archiveUrlTemplate={replay?.archiveUrlTemplate ?? null}
-                          archiveOffsetSeconds={replay?.archiveOffsetSeconds ?? 0}
+                          replay={replay}
                         />
                       ) : null}
                     </div>
@@ -543,8 +542,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
           onSelect={lookThrough.toggle}
           feeds={cameraFeeds}
           clock={clock}
-          archiveUrlTemplate={replay?.archiveUrlTemplate ?? null}
-          archiveOffsetSeconds={replay?.archiveOffsetSeconds ?? 0}
+          replay={replay}
           error={poleCameras.error}
         />
       </div>

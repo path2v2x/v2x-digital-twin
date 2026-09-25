@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
 import type { CameraFeedState, CameraFeeds } from "@/app/lib/live-world/camera-feeds";
-import type { WorldClock } from "@/app/lib/live-world/types";
+import type { WorldClock, WorldReplayCapabilities } from "@/app/lib/live-world/types";
 import { cn } from "@/app/lib/utils";
 import { CameraFeed, type FeedDisplayState } from "./CameraFeed";
 
@@ -22,13 +22,12 @@ interface CameraStripProps {
   onSelect: (key: string) => void;
   feeds: CameraFeeds | null;
   clock: WorldClock | null;
-  archiveUrlTemplate: string | null;
-  archiveOffsetSeconds: number;
+  replay: WorldReplayCapabilities | null;
   error: string | null;
 }
 
 /** Permanently open, slim column of camera frames; a click looks through that camera. */
-export function CameraStrip({ cameras, activeKey, onSelect, feeds, clock, archiveUrlTemplate, archiveOffsetSeconds, error }: CameraStripProps) {
+export function CameraStrip({ cameras, activeKey, onSelect, feeds, clock, replay, error }: CameraStripProps) {
   const [feedStates, setFeedStates] = useState<Readonly<Record<string, CameraFeedState>>>(() => feeds?.states ?? {});
 
   useEffect(() => {
@@ -53,8 +52,7 @@ export function CameraStrip({ cameras, activeKey, onSelect, feeds, clock, archiv
           feeds={feeds}
           feedState={feedStates[camera.id] ?? "starting"}
           clock={clock}
-          archiveUrlTemplate={archiveUrlTemplate}
-          archiveOffsetSeconds={archiveOffsetSeconds}
+          replay={replay}
         />
       ))}
       {cameras.length === 0 ? (
@@ -75,8 +73,7 @@ function CameraTile({ camera, rigLabel, active, alignable, onSelect, ...feed }: 
   feeds: CameraFeeds | null;
   feedState: CameraFeedState;
   clock: WorldClock | null;
-  archiveUrlTemplate: string | null;
-  archiveOffsetSeconds: number;
+  replay: WorldReplayCapabilities | null;
 }) {
   const [display, setDisplay] = useState<FeedDisplayState>("starting");
   const label = camera.label ?? camera.id;

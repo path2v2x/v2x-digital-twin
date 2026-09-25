@@ -32,23 +32,50 @@ export const MAX_CLIP_LEAD_MS = 15_000;
 /** Start-up lag below this is accepted rather than re-requested. */
 export const CLIP_LAG_TOLERANCE_SECONDS = 1.5;
 
+/** A recorded span, in replay-clock milliseconds. */
+export interface ArchiveSegment {
+  startMs: number;
+  endMs: number;
+}
+
+/**
+ * Clips start at least this far inside a segment: the archive answers 404 for
+ * a start in a recording gap, including a fraction of a second before the
+ * segment's first frame.
+ */
+export const SEGMENT_START_MARGIN_MS = 1_000;
+/** A clip shorter than this is not worth requesting; the clock waits for the next segment. */
+export const MIN_CLIP_MS = 2_000;
+
 /**
  * `leadMs` shifts the request ahead of the clock by the clip's measured
  * start-up latency so that, when the first frame arrives, it matches the clock.
+ * With `segments`, the clip is placed inside the recording that covers the
+ * target and ends with it; a target in a gap yields no clip.
  */
-export function archiveClipAt(clockMs: number, leadMs = 0): ArchiveClipWindow {
-  const startMs = Math.floor((clockMs + Math.min(MAX_CLIP_LEAD_MS, Math.max(0, leadMs))) / 1_000) * 1_000;
+export function archiveClipAt(clockMs: number, leadMs = 0, segments: readonly ArchiveSegment[] | null = null): ArchiveClipWindow | null {
+  const targetMs = Math.floor((clockMs + Math.min(MAX_CLIP_LEAD_MS, Math.max(0, leadMs))) / 1_000) * 1_000;
+  if (!segments) return clipWindow(targetMs, ARCHIVE_CLIP_MS);
+  const segment = segments.find((s) => targetMs < s.endMs && targetMs + 1_000 > s.startMs);
+  if (!segment) return null;
+  const startMs = Math.max(targetMs, Math.ceil((segment.startMs + SEGMENT_START_MARGIN_MS) / 1_000) * 1_000);
+  const lengthMs = Math.min(ARCHIVE_CLIP_MS, Math.floor((segment.endMs - startMs) / 1_000) * 1_000);
+  return lengthMs >= MIN_CLIP_MS ? clipWindow(startMs, lengthMs) : null;
+}
+
+function clipWindow(startMs: number, lengthMs: number): ArchiveClipWindow {
   return {
     startMs,
-    endMs: startMs + ARCHIVE_CLIP_MS,
+    endMs: startMs + lengthMs,
     startIso: new Date(startMs).toISOString(),
-    durationSeconds: ARCHIVE_CLIP_SECONDS,
+    durationSeconds: lengthMs / 1_000,
   };
 }
 
 /**
  * Keep the current clip while the clock plays through it; start a new clip when
- * the clock leaves it or jumps (a seek), or when nothing is loaded yet.
+ * the clock leaves it or jumps (a seek), or when nothing is loaded yet. `null`
+ * means the clock is in a recording gap; it is re-resolved on every sample.
  */
 export function resolveArchiveClip(
   current: ArchiveClipWindow | null,
@@ -56,15 +83,42 @@ export function resolveArchiveClip(
   clockMs: number,
   speed: number,
   leadMs = 0,
-): ArchiveClipWindow {
+  segments: readonly ArchiveSegment[] | null = null,
+): ArchiveClipWindow | null {
   if (!current || clockMs < current.startMs - MAX_CLIP_LEAD_MS || clockMs >= current.endMs) {
-    return archiveClipAt(clockMs, leadMs);
+    return archiveClipAt(clockMs, leadMs, segments);
   }
   if (Number.isFinite(previousClockMs)) {
     const expectedAdvanceMs = Math.max(0, speed) * 1_000;
-    if (Math.abs(clockMs - previousClockMs) > CLIP_SEEK_JUMP_MS + expectedAdvanceMs) return archiveClipAt(clockMs, leadMs);
+    if (Math.abs(clockMs - previousClockMs) > CLIP_SEEK_JUMP_MS + expectedAdvanceMs) return archiveClipAt(clockMs, leadMs, segments);
   }
   return current;
+}
+
+/**
+ * Recorded segments from a MediaMTX `/list` body (`[{start, duration}]`),
+ * shifted from archive time into replay-clock time by `archiveOffsetSeconds`.
+ */
+export function parseArchiveSegments(body: unknown, archiveOffsetSeconds = 0): ArchiveSegment[] | null {
+  if (!Array.isArray(body)) return null;
+  const offsetMs = archiveOffsetSeconds * 1_000;
+  const segments: ArchiveSegment[] = [];
+  for (const item of body) {
+    if (!item || typeof item !== 'object') return null;
+    const { start, duration } = item as { start?: unknown; duration?: unknown };
+    const startMs = typeof start === 'string' ? Date.parse(start) : Number.NaN;
+    if (!Number.isFinite(startMs) || typeof duration !== 'number' || !Number.isFinite(duration) || duration < 0) return null;
+    segments.push({ startMs: startMs - offsetMs, endMs: startMs - offsetMs + duration * 1_000 });
+  }
+  return segments.sort((a, b) => a.startMs - b.startMs);
+}
+
+export function archiveListUrl(template: string, channel: string, startMs: number, endMs: number, archiveOffsetSeconds = 0): string {
+  const offsetMs = archiveOffsetSeconds * 1_000;
+  return template
+    .replaceAll('{channel}', encodeURIComponent(channel))
+    .replaceAll('{start}', encodeURIComponent(new Date(startMs + offsetMs).toISOString()))
+    .replaceAll('{end}', encodeURIComponent(new Date(endMs + offsetMs).toISOString()));
 }
 
 /**

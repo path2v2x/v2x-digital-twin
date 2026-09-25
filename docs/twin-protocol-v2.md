@@ -35,16 +35,22 @@ and the replay discovery block:
     "retention_hours": 72,
     "archive_offset_seconds": 0,
     "archive_url_template": "https://example.test/archive/get?path={channel}&start={start}&duration={duration}&format=mp4",
+    "archive_list_url_template": "https://example.test/archive/list?path={channel}&start={start}&end={end}",
     "coverage_url": "https://example.test/detections/coverage",
     "history_url": "https://example.test/detections/history"
   }
 }
 ```
 
-The three URLs are absolute and are all `null` when
+The URLs are absolute and are all `null` when
 `TWIN_PUBLIC_HTTP_ORIGIN` is unset. `archive_url_template` comes from
 `TWIN_ARCHIVE_URL_TEMPLATE`; `{channel}`, `{start}`, and `{duration}` are
-client-substituted. `archive_offset_seconds` is the finite numeric
+client-substituted. `archive_list_url_template` comes from
+`TWIN_ARCHIVE_LIST_URL_TEMPLATE` (`null` when unset) and returns MediaMTX's
+recorded segments (`[{"start": RFC3339, "duration": seconds}]`) between the
+substituted `{start}` and `{end}`. The archive answers 404 for a clip that
+starts in a recording gap, so clients anchor clips inside listed segments.
+`archive_offset_seconds` is the finite numeric
 `TWIN_ARCHIVE_OFFSET_SECONDS` value (default `0`). Clients add it to the
 detection-clock clip start when requesting archive footage; fractional values
 preserve subsecond precision.

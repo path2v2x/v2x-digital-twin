@@ -1,21 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { VideoOff } from "lucide-react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
 import type { CameraFeedState, CameraFeeds } from "@/app/lib/live-world/camera-feeds";
-import type { WorldClock } from "@/app/lib/live-world/types";
+import type { WorldClock, WorldReplayCapabilities } from "@/app/lib/live-world/types";
 import { cn } from "@/app/lib/utils";
 import {
   archiveClipAt,
+  archiveListUrl,
   archiveVideoUrl,
   CLIP_LAG_TOLERANCE_SECONDS,
   clipStartupLagSeconds,
   MAX_CLIP_LEAD_MS,
+  MIN_CLIP_MS,
+  parseArchiveSegments,
   resolveArchiveClip,
   shouldCorrectVideoDrift,
   type ArchiveClipWindow,
+  type ArchiveSegment,
 } from "./replay-helpers";
 
 export type FeedDisplayState = CameraFeedState | "paused" | "no-recording";
@@ -25,19 +29,18 @@ export interface CameraFeedProps {
   feeds: CameraFeeds | null;
   feedState: CameraFeedState;
   clock: WorldClock | null;
-  archiveUrlTemplate: string | null;
-  archiveOffsetSeconds: number;
+  replay: WorldReplayCapabilities | null;
   className?: string;
   onDisplayState?: (state: FeedDisplayState) => void;
 }
 
 /** Live multiplexed frames, or the archived recording at the replay clock. */
-export function CameraFeed({ camera, feeds, feedState, clock, archiveUrlTemplate, archiveOffsetSeconds, className, onDisplayState }: CameraFeedProps) {
-  const replaying = clock?.mode === "replay" && archiveUrlTemplate !== null;
+export function CameraFeed({ camera, feeds, feedState, clock, replay, className, onDisplayState }: CameraFeedProps) {
+  const archiveUrlTemplate = replay?.archiveUrlTemplate ?? null;
   return (
     <div className={cn("relative overflow-hidden bg-black", className)} style={{ aspectRatio: `${camera.intrinsics.width} / ${camera.intrinsics.height}` }}>
-      {replaying ? (
-        <ArchiveFeed camera={camera} clock={clock} archiveUrlTemplate={archiveUrlTemplate} archiveOffsetSeconds={archiveOffsetSeconds} onDisplayState={onDisplayState} />
+      {clock?.mode === "replay" && replay && archiveUrlTemplate !== null ? (
+        <ArchiveFeed camera={camera} clock={clock} replay={replay} archiveUrlTemplate={archiveUrlTemplate} onDisplayState={onDisplayState} />
       ) : feeds ? (
         <LiveFeed camera={camera} feeds={feeds} feedState={feedState} onDisplayState={onDisplayState} />
       ) : (
@@ -76,12 +79,73 @@ function LiveFeed({ camera, feeds, feedState, onDisplayState }: { camera: PoleCa
   );
 }
 
-function ArchiveFeed({ camera, clock, archiveUrlTemplate, archiveOffsetSeconds, onDisplayState }: { camera: PoleCamera; clock: WorldClock; archiveUrlTemplate: string; archiveOffsetSeconds: number; onDisplayState?: (state: FeedDisplayState) => void }) {
+/** Segment listings cover this window (plus margins) around the replay clock. */
+const SEGMENT_WINDOW_MS = 30 * 60_000;
+const SEGMENT_MARGIN_MS = 10 * 60_000;
+/** A segment ending this close to now is still being recorded. */
+const RECORDING_TAIL_MS = 30_000;
+/** Least time between re-listings when the clock runs past the last known segment. */
+const TAIL_REFRESH_MS = 5_000;
+/** After a video error the tile waits this long (replay time) before requesting again. */
+const ERROR_RETRY_MS = 10_000;
+
+/**
+ * Recorded segments around the replay clock: `undefined` while the first
+ * listing loads, `null` when no listing is available (clips are then
+ * requested unconstrained).
+ */
+function useArchiveSegments(template: string | null, channel: string, clockMs: number, offsetSeconds: number): readonly ArchiveSegment[] | null | undefined {
+  const [loaded, setLoaded] = useState<{ key: string; segments: ArchiveSegment[] | null; fetchedAt: number } | null>(null);
+  const windowStartMs = Number.isFinite(clockMs) ? Math.floor(clockMs / SEGMENT_WINDOW_MS) * SEGMENT_WINDOW_MS - SEGMENT_MARGIN_MS : Number.NaN;
+  const key = template !== null && Number.isFinite(windowStartMs) ? `${channel}@${windowStartMs}` : null;
+  const current = loaded !== null && loaded.key === key ? loaded : null;
+  const lastEndMs = current?.segments?.length ? current.segments.at(-1)!.endMs : Number.NEGATIVE_INFINITY;
+  const tailStale = current !== null && clockMs >= lastEndMs - MIN_CLIP_MS && Date.now() - current.fetchedAt > TAIL_REFRESH_MS;
+  const needsFetch = key !== null && (current === null || tailStale);
+
+  useEffect(() => {
+    if (!needsFetch || template === null || key === null) return;
+    const controller = new AbortController();
+    let settled = false;
+    const url = archiveListUrl(template, channel, windowStartMs, windowStartMs + SEGMENT_WINDOW_MS + 2 * SEGMENT_MARGIN_MS, offsetSeconds);
+    const settle = (segments: ArchiveSegment[] | null) => {
+      settled = true;
+      setLoaded({ key, segments, fetchedAt: Date.now() });
+    };
+    fetch(url, { signal: controller.signal })
+      .then(async (response) => {
+        // MediaMTX answers 404 when nothing was recorded in the window.
+        if (response.status === 404) return settle([]);
+        settle(response.ok ? parseArchiveSegments(await response.json(), offsetSeconds) : null);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) settle(null);
+      });
+    return () => {
+      if (!settled) controller.abort();
+    };
+  }, [needsFetch, key, template, channel, windowStartMs, offsetSeconds]);
+
+  // The newest segment is still growing while the recorder runs; treat it as open-ended.
+  const display = useMemo(() => {
+    const segments = current?.segments;
+    if (!current || !segments?.length) return segments;
+    const last = segments.at(-1)!;
+    return last.endMs > current.fetchedAt - RECORDING_TAIL_MS
+      ? [...segments.slice(0, -1), { startMs: last.startMs, endMs: Number.POSITIVE_INFINITY }]
+      : segments;
+  }, [current]);
+  if (current === null) return key === null ? null : undefined;
+  return display ?? null;
+}
+
+function ArchiveFeed({ camera, clock, replay, archiveUrlTemplate, onDisplayState }: { camera: PoleCamera; clock: WorldClock; replay: WorldReplayCapabilities; archiveUrlTemplate: string; onDisplayState?: (state: FeedDisplayState) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [unavailable, setUnavailable] = useState(false);
   const clockMs = clock.timeIso === null ? Number.NaN : Date.parse(clock.timeIso);
+  const segments = useArchiveSegments(replay.archiveListUrlTemplate, camera.id, clockMs, replay.archiveOffsetSeconds);
   const [clip, setClip] = useState<ArchiveClipWindow | null>(null);
   const previousClockMs = useRef(Number.NaN);
+  const retryAtMs = useRef(Number.NEGATIVE_INFINITY);
   // MediaMTX playback is not seekable, so later requests are led by the measured start-up latency.
   const leadMs = useRef(0);
   const leadCorrections = useRef(0);
@@ -92,18 +156,19 @@ function ArchiveFeed({ camera, clock, archiveUrlTemplate, archiveOffsetSeconds, 
       setClip(null);
       return;
     }
-    setClip((current) => {
-      const next = resolveArchiveClip(current, previousClockMs.current, clockMs, clock.speed, leadMs.current);
-      if (next !== current) leadCorrections.current = 0;
-      return next;
-    });
+    if (segments !== undefined && clockMs >= retryAtMs.current) {
+      setClip((current) => {
+        const next = resolveArchiveClip(current, previousClockMs.current, clockMs, clock.speed, leadMs.current, segments);
+        if (next !== current) leadCorrections.current = 0;
+        return next;
+      });
+    }
     previousClockMs.current = clockMs;
-  }, [clockMs, clock.speed]);
+  }, [clockMs, clock.speed, segments]);
 
-  const src = clip ? archiveVideoUrl(archiveUrlTemplate, camera.id, clip, archiveOffsetSeconds) : null;
-  const displayState: FeedDisplayState = unavailable || !src ? "no-recording" : clock.speed === 0 ? "paused" : "replay";
+  const src = clip ? archiveVideoUrl(archiveUrlTemplate, camera.id, clip, replay.archiveOffsetSeconds) : null;
+  const displayState: FeedDisplayState = !src ? (segments === undefined ? "starting" : "no-recording") : clock.speed === 0 ? "paused" : "replay";
 
-  useEffect(() => setUnavailable(false), [src]);
   useEffect(() => onDisplayState?.(displayState), [displayState, onDisplayState]);
 
   useEffect(() => {
@@ -116,10 +181,13 @@ function ArchiveFeed({ camera, clock, archiveUrlTemplate, archiveOffsetSeconds, 
       } else if (clock.speed > 0 && !video.paused && leadCorrections.current < 2) {
         const lagSeconds = clipStartupLagSeconds(clip, clockMs, video.currentTime);
         if (lagSeconds > CLIP_LAG_TOLERANCE_SECONDS) {
-          leadCorrections.current += 1;
-          leadMs.current = Math.min(MAX_CLIP_LEAD_MS, leadMs.current + lagSeconds * 1_000);
-          setClip(archiveClipAt(clockMs, leadMs.current));
-          return;
+          const led = archiveClipAt(clockMs, Math.min(MAX_CLIP_LEAD_MS, leadMs.current + lagSeconds * 1_000), segments ?? null);
+          if (led) {
+            leadCorrections.current += 1;
+            leadMs.current = Math.min(MAX_CLIP_LEAD_MS, leadMs.current + lagSeconds * 1_000);
+            setClip(led);
+            return;
+          }
         }
       }
     }
@@ -130,7 +198,7 @@ function ArchiveFeed({ camera, clock, archiveUrlTemplate, archiveOffsetSeconds, 
     video.playbackRate = clock.speed;
     // Muted autoplay can be gated while metadata loads; the next clock sample retries.
     void video.play().catch(() => undefined);
-  }, [clip, clock.speed, clockMs]);
+  }, [clip, clock.speed, clockMs, segments]);
 
   return (
     <>
@@ -153,8 +221,11 @@ function ArchiveFeed({ camera, clock, archiveUrlTemplate, archiveOffsetSeconds, 
               void event.currentTarget.play().catch(() => undefined);
             }
           }}
-          onError={() => setUnavailable(true)}
-          // A recording gap shortens the served clip; re-anchor at the clock.
+          onError={() => {
+            retryAtMs.current = clockMs + ERROR_RETRY_MS;
+            setClip(null);
+          }}
+          // The clip ends with its segment (or earlier if the recording is shorter); re-anchor at the clock.
           onEnded={() => setClip(null)}
         />
       ) : null}

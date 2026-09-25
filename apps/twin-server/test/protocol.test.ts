@@ -274,6 +274,7 @@ describe('/twin round-trips', () => {
       retention_hours: 72,
       archive_offset_seconds: 0,
       archive_url_template: config.archiveUrlTemplate,
+      archive_list_url_template: config.archiveListUrlTemplate,
       coverage_url: `${config.publicHttpOrigin}/detections/coverage`,
       history_url: `${config.publicHttpOrigin}/detections/history`,
     });

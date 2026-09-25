@@ -18,6 +18,7 @@ export function testConfig(overrides: Partial<TwinConfig> = {}): TwinConfig {
     historyDb: ':memory:',
     publicHttpOrigin: 'https://twin.example.test',
     archiveUrlTemplate: 'https://twin.example.test/archive/get?path={channel}&start={start}&duration={duration}&format=mp4',
+    archiveListUrlTemplate: 'https://twin.example.test/archive/list?path={channel}&start={start}&end={end}',
     ...overrides,
   };
 }

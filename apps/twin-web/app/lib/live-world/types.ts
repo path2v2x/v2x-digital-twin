@@ -39,6 +39,8 @@ export interface WorldReplayCapabilities {
   retentionHours: number;
   archiveOffsetSeconds: number;
   archiveUrlTemplate: string | null;
+  /** Recorded-segment listing; null when the server does not advertise one. */
+  archiveListUrlTemplate: string | null;
   coverageUrl: string | null;
   historyUrl: string | null;
 }
