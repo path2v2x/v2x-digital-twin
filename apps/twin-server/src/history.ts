@@ -18,10 +18,17 @@ export interface HistoryRange {
   readonly next: string | null;
 }
 
+export interface CameraCoverage {
+  readonly detections: number;
+  readonly objects: number;
+}
+
 export interface CoverageBucket {
   readonly start: string;
   readonly detections: number;
   readonly objects: number;
+  /** Present when requested per camera. */
+  readonly cameras?: Readonly<Record<string, CameraCoverage>>;
 }
 
 export interface ObjectSummary {
@@ -52,6 +59,10 @@ interface CoverageRow {
   objects: number;
 }
 
+interface CameraCoverageRow extends CoverageRow {
+  camera: string;
+}
+
 interface ObjectRow {
   object_id: string;
   object_type: string;
@@ -75,6 +86,7 @@ export class DetectionHistory {
   private readonly insertDetection: StatementSync;
   private readonly selectRange: StatementSync;
   private readonly selectCoverage: StatementSync;
+  private readonly selectCameraCoverage: StatementSync;
   private readonly selectObjects: StatementSync;
   private readonly deleteDetections: StatementSync;
   private readonly deleteFrames: StatementSync;
@@ -121,6 +133,16 @@ export class DetectionHistory {
       WHERE ts_ms >= ? AND ts_ms < ?
       GROUP BY bucket_index
       ORDER BY bucket_index
+    `);
+    this.selectCameraCoverage = this.db.prepare(`
+      SELECT CAST((ts_ms - ?) / ? AS INTEGER) AS bucket_index,
+             camera,
+             COUNT(*) AS detections,
+             COUNT(DISTINCT object_id) AS objects
+      FROM detections
+      WHERE ts_ms >= ? AND ts_ms < ?
+      GROUP BY bucket_index, camera
+      ORDER BY bucket_index, camera
     `);
     this.selectObjects = this.db.prepare(`
       SELECT d.object_id,
@@ -194,23 +216,28 @@ export class DetectionHistory {
     };
   }
 
-  coverage(startMs: number, endMs: number, bucketSec: number): CoverageBucket[] {
+  coverage(startMs: number, endMs: number, bucketSec: number, byCamera = false): CoverageBucket[] {
     const bucketMs = bucketSec * 1000;
     const count = Math.ceil((endMs - startMs) / bucketMs);
-    const buckets: CoverageBucket[] = Array.from({ length: count }, (_, index) => ({
+    const buckets = Array.from({ length: count }, (_, index) => ({
       start: iso(startMs + index * bucketMs),
       detections: 0,
       objects: 0,
+      ...(byCamera ? { cameras: {} as Record<string, CameraCoverage> } : {}),
     }));
     const rows = this.selectCoverage.all(startMs, bucketMs, startMs, endMs) as unknown as CoverageRow[];
     for (const row of rows) {
       const bucket = buckets[row.bucket_index];
       if (!bucket) continue;
-      buckets[row.bucket_index] = {
-        start: bucket.start,
-        detections: Number(row.detections),
-        objects: Number(row.objects),
-      };
+      bucket.detections = Number(row.detections);
+      bucket.objects = Number(row.objects);
+    }
+    if (byCamera) {
+      const cameraRows = this.selectCameraCoverage.all(startMs, bucketMs, startMs, endMs) as unknown as CameraCoverageRow[];
+      for (const row of cameraRows) {
+        const cameras = buckets[row.bucket_index]?.cameras;
+        if (cameras) cameras[row.camera] = { detections: Number(row.detections), objects: Number(row.objects) };
+      }
     }
     return buckets;
   }

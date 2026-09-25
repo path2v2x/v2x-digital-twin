@@ -36,8 +36,8 @@ import {
   type SimScenarioInput,
 } from '@simforge-oss/engine';
 import { WorldSession, type SpawnRequest, type TruthSubscription, type WorldActorState, type WorldCommand } from '@simforge-oss/training-env';
-import type { LegacyFlatEarthFrame } from '@simforge-oss/maps';
-import { flatEarthFromXodr, sceneHeadingFromLegacyYawDeg, type SceneXZ } from './geo.js';
+import { LegacyFlatEarthFrame } from '@simforge-oss/maps';
+import { georeferenceFromXodr, sceneHeadingFromLegacyYawDeg, type SceneXZ } from './geo.js';
 import path from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { readFileSync } from 'node:fs';
@@ -108,6 +108,8 @@ let commandSeq = 0;
 export class TwinWorld {
   readonly bundle: MapBundle;
   readonly frame: LegacyFlatEarthFrame;
+  /** PROJ string of the map's georeference; browsers rebuild the same frame from it. */
+  readonly georeference: string;
   readonly xodrSha256: string;
   readonly dt: number;
   readonly meta = new Map<string, ActorMeta>();
@@ -131,9 +133,10 @@ export class TwinWorld {
   private coveredSpawnPoints: Array<{ x: number; z: number; headingRad: number }> = [];
   private tileCoverage: Array<{ minX: number; maxX: number; minZ: number; maxZ: number }> = [];
 
-  private constructor(bundle: MapBundle, frame: LegacyFlatEarthFrame, xodrSha256: string, baseInput: SimScenarioInput, dt: number, epochSeconds: number) {
+  private constructor(bundle: MapBundle, frame: LegacyFlatEarthFrame, georeference: string, xodrSha256: string, baseInput: SimScenarioInput, dt: number, epochSeconds: number) {
     this.bundle = bundle;
     this.frame = frame;
+    this.georeference = georeference;
     this.xodrSha256 = xodrSha256;
     this.baseInput = baseInput;
     this.dt = dt;
@@ -156,7 +159,8 @@ export class TwinWorld {
 
   static async create(config: TwinConfig): Promise<TwinWorld> {
     const bundle = loadTwinMap(config.mapId, config.mapBundleDir);
-    const frame = flatEarthFromXodr(path.join(config.mapBundleDir, 'map.xodr'));
+    const georeference = georeferenceFromXodr(path.join(config.mapBundleDir, 'map.xodr'));
+    const frame = LegacyFlatEarthFrame.fromProjString(georeference);
     const plan = buildMapControlPlan({
       index: bundle.index,
       graph: bundle.graph,
@@ -174,7 +178,7 @@ export class TwinWorld {
       signalPrograms: plan.signalPrograms,
       operationalConditions: {},
     });
-    const world = new TwinWorld(bundle, frame, world0Sha(bundle), input, config.tickDt, config.sessionEpochSeconds);
+    const world = new TwinWorld(bundle, frame, georeference, world0Sha(bundle), input, config.tickDt, config.sessionEpochSeconds);
     world.tileCoverage = TwinWorld.readTileCoverage(config.mapBundleDir);
     world.buildSpawnPoints();
     return world;

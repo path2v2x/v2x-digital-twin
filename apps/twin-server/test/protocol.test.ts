@@ -402,6 +402,17 @@ describe('HTTP :8090', () => {
     const coverageBody = (await coverage.json()) as Json;
     expect(coverageBody['bucket_seconds']).toBe(60);
     expect(coverageBody['buckets']).toHaveLength(3);
+    const perCamera = await fetch(`http://127.0.0.1:${config.httpPort}/detections/coverage?start=${rangeStart}&end=${rangeEnd}&bucket=1&by=camera`);
+    expect(perCamera.status).toBe(200);
+    const perCameraBuckets = ((await perCamera.json()) as Json)['buckets'] as Json[];
+    expect(perCameraBuckets).toHaveLength(180);
+    expect(perCameraBuckets.every((bucket) => typeof bucket['cameras'] === 'object')).toBe(true);
+    const replayConfig = await fetch(`http://127.0.0.1:${config.httpPort}/detections/replay-config`);
+    expect(replayConfig.status).toBe(200);
+    const replayBody = (await replayConfig.json()) as Json;
+    expect(replayBody['archive_list_url_template']).toBe(config.archiveListUrlTemplate);
+    expect(replayBody['retention_hours']).toBe(72);
+    expect(String(replayBody['georeference'])).toMatch(/^\+proj=tmerc /);
     const history = await fetch(`http://127.0.0.1:${config.httpPort}/detections/history?start=${rangeStart}&end=${rangeEnd}`);
     expect(history.status).toBe(200);
     const historyBody = (await history.json()) as Json;

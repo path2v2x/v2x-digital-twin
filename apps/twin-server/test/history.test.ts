@@ -52,6 +52,19 @@ describe('DetectionHistory', () => {
     ]);
   });
 
+  it('splits bucket counts per camera when asked', () => {
+    const store = history();
+    const baseMs = 1_756_000_000_000;
+    store.recordSummary('ch1', baseMs / 1000 + 0.5, [detection('a'), detection('b')]);
+    store.recordSummary('ch2', baseMs / 1000 + 0.7, [detection('a')]);
+    store.recordSummary('ch2', baseMs / 1000 + 1.2, [detection('c')]);
+
+    expect(store.coverage(baseMs, baseMs + 2_000, 1, true)).toEqual([
+      { start: new Date(baseMs).toISOString(), detections: 3, objects: 2, cameras: { ch1: { detections: 2, objects: 2 }, ch2: { detections: 1, objects: 1 } } },
+      { start: new Date(baseMs + 1_000).toISOString(), detections: 1, objects: 1, cameras: { ch2: { detections: 1, objects: 1 } } },
+    ]);
+  });
+
   it('summarises objects newest-last-seen first with their latest position', () => {
     const store = history();
     const baseMs = 1_756_000_000_000;

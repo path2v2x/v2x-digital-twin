@@ -133,6 +133,17 @@ export function startServers(deps: DriveDeps): TwinServers {
       }
       return;
     }
+    if (url.pathname === '/detections/replay-config') {
+      jsonResponse(res, 200, {
+        retention_hours: config.historyRetentionHours,
+        history_available: sync.history !== null,
+        archive_url_template: config.archiveUrlTemplate || null,
+        archive_list_url_template: config.archiveListUrlTemplate || null,
+        archive_offset_seconds: config.archiveOffsetSeconds,
+        georeference: world.georeference,
+      });
+      return;
+    }
     if (
       url.pathname === '/detections/coverage' ||
       url.pathname === '/detections/history' ||
@@ -149,16 +160,17 @@ export function startServers(deps: DriveDeps): TwinServers {
         if (url.pathname === '/detections/coverage') {
           const rawBucket = url.searchParams.get('bucket');
           const bucketSec = rawBucket === null ? 300 : Number(rawBucket);
-          if (!Number.isInteger(bucketSec) || bucketSec < 10) {
-            throw new Error('bucket must be an integer of at least 10 seconds');
+          if (!Number.isInteger(bucketSec) || bucketSec < 1) {
+            throw new Error('bucket must be a positive integer number of seconds');
           }
           const bucketCount = Math.ceil((endMs - startMs) / (bucketSec * 1000));
           if (bucketCount > 2000) throw new Error('requested range exceeds 2000 buckets');
+          const byCamera = url.searchParams.get('by') === 'camera';
           jsonResponse(res, 200, {
             start: new Date(startMs).toISOString(),
             end: new Date(endMs).toISOString(),
             bucket_seconds: bucketSec,
-            buckets: sync.history.coverage(startMs, endMs, bucketSec),
+            buckets: sync.history.coverage(startMs, endMs, bucketSec, byCamera),
           });
           return;
         }

@@ -12,12 +12,16 @@ export interface SceneXZ {
   readonly z: number;
 }
 
-export function flatEarthFromXodr(xodrPath: string): LegacyFlatEarthFrame {
+/** The PROJ string in the OpenDRIVE header's geoReference. */
+export function georeferenceFromXodr(xodrPath: string): string {
   const head = readFileSync(xodrPath, 'utf8').slice(0, 262_144);
   const cdata = /<geo[Rr]eference[^>]*><!\[CDATA\[([^\]]*)\]\]>/.exec(head);
   const plain = /<geo[Rr]eference[^>]*>([^<]*)</.exec(head);
-  const proj = (cdata?.[1] ?? plain?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&quot;', '"');
-  return LegacyFlatEarthFrame.fromProjString(proj);
+  return (cdata?.[1] ?? plain?.[1] ?? '').replaceAll('&amp;', '&').replaceAll('&quot;', '"').trim();
+}
+
+export function flatEarthFromXodr(xodrPath: string): LegacyFlatEarthFrame {
+  return LegacyFlatEarthFrame.fromProjString(georeferenceFromXodr(xodrPath));
 }
 
 /** WGS-84 -> scene ground point. */
