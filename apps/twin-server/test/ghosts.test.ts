@@ -49,19 +49,26 @@ describe('ghost lifecycle', () => {
     expect(sceneActor.position[0]).toBeCloseTo(20, 0);
     expect(sceneActor.position[2]).toBeCloseTo(20, 0);
 
-    // t0+1: second fix 8 m east → the ghost chases it (engine dynamic body:
-    // accel-limited ramp instead of v1's transform lerp — documented
-    // divergence). Assert monotone progress toward the fix over 2 s.
+    // t0+1: the object is now reported 8 m east (a live feed repeats the fix
+    // every poll) → the ghost chases it with the engine's dynamic body.
+    // Assert monotone progress toward the fix over 2 s.
     now += 1;
-    mirror.ingest([detection(world, 'obj-1', 28, 20)], now);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    let wall = 5_000_000;
     const progressAt: number[] = [];
-    for (let step = 0; step < 4; step++) {
+    for (let step = 0; step < 40; step++) {
+      wall += world.dt * 1000;
+      vi.setSystemTime(wall);
+      if (step % 2 === 0) mirror.ingest([detection(world, 'obj-1', 28, 20)], now);
       mirror.drive();
-      world.session.advance(10); // 0.5 s of sim each
+      world.session.advance(1);
       drain();
-      const at = frames.at(-1)!.scene.actors.find((a) => a.id === ghostId)!;
-      progressAt.push(at.position[0] - 20);
+      if (step % 10 === 9) {
+        const at = frames.at(-1)!.scene.actors.find((a) => a.id === ghostId)!;
+        progressAt.push(at.position[0] - 20);
+      }
     }
+    vi.useRealTimers();
     expect(progressAt[3]!).toBeGreaterThan(4); // well on the way to x=28
     expect(progressAt[3]!).toBeGreaterThan(progressAt[0]!); // monotone chase
     const settled = frames.at(-1)!.scene.actors.find((a) => a.id === ghostId)!;
@@ -130,23 +137,28 @@ describe('ghost lifecycle', () => {
     afterEach(() => vi.useRealTimers());
 
     // Monocular fixes jump ~1-3 m between frames; the mirror must settle, not orbit.
-    async function settle(objectType: string, jump: { x: number; z: number }) {
+    // `fixAt(t)` is the fix offset from (20, 20) reported at simulated second t.
+    async function settle(objectType: string, fixAt: (t: number) => { x: number; z: number }, steps = 200) {
       vi.useFakeTimers({ toFake: ['Date'] });
       const world = await testWorld();
       const mirror = new GhostMirror(world, 12);
+      const report = (t: number) => {
+        const f = fixAt(t);
+        mirror.ingest([detection(world, 'jit', 20 + f.x, 20 + f.z, { object_type: objectType })], now);
+      };
       let now = 3_000;
       vi.setSystemTime(now * 1000);
       mirror.ingest([detection(world, 'jit', 20, 20, { object_type: objectType })], now);
       const actorId = mirror.tracks.get('jit')!.actorId!;
       world.session.advance(10);
-      mirror.ingest([detection(world, 'jit', 20 + jump.x, 20 + jump.z, { object_type: objectType })], now);
       let path = 0;
       let turned = 0;
       let prev = world.actorState(actorId)!;
-      for (let step = 0; step < 200; step++) {
+      for (let step = 0; step < steps; step++) {
+        const t = step * world.dt;
         now += world.dt;
         vi.setSystemTime(now * 1000);
-        if (step % 10 === 0) mirror.ingest([detection(world, 'jit', 20 + jump.x, 20 + jump.z, { object_type: objectType })], now);
+        if (step % 4 === 0) report(t);
         mirror.drive();
         world.session.advance(1);
         const cur = world.actorState(actorId)!;
@@ -154,30 +166,93 @@ describe('ghost lifecycle', () => {
         turned += Math.abs(Math.atan2(Math.sin(cur.headingRad - prev.headingRad), Math.cos(cur.headingRad - prev.headingRad)));
         prev = cur;
       }
-      const miss = Math.hypot(prev.x - (20 + jump.x), prev.z - (20 + jump.z));
-      return { path, turnedDeg: (turned * 180) / Math.PI, miss, speed: prev.speedMps };
+      return { path, turnedDeg: (turned * 180) / Math.PI, speed: prev.speedMps, at: { x: prev.x - 20, z: prev.z - 20 }, elapsedS: steps * world.dt };
     }
+    const missFrom = (r: { at: { x: number; z: number } }, p: { x: number; z: number }) => Math.hypot(r.at.x - p.x, r.at.z - p.z);
 
     it('a pedestrian walks to a fix beside it and stops', async () => {
-      const r = await settle('person', { x: 0, z: 2 });
-      expect(r.miss).toBeLessThan(1);
+      const r = await settle('person', () => ({ x: 0, z: 2 }));
+      expect(missFrom(r, { x: 0, z: 2 })).toBeLessThan(1);
       expect(r.path).toBeLessThan(4);
       expect(r.turnedDeg).toBeLessThan(360);
       expect(r.speed).toBeLessThan(0.3);
     });
 
     it('a pedestrian walks back to a fix behind it and stops', async () => {
-      const r = await settle('person', { x: -2, z: 0 });
-      expect(r.miss).toBeLessThan(1);
+      const r = await settle('person', () => ({ x: -2, z: 0 }));
+      expect(missFrom(r, { x: -2, z: 0 })).toBeLessThan(1);
       expect(r.path).toBeLessThan(4);
       expect(r.turnedDeg).toBeLessThan(360);
     });
 
     it('a car holds instead of circling a fix inside its turning radius', async () => {
-      const r = await settle('car', { x: 0, z: 2 });
+      const r = await settle('car', () => ({ x: 0, z: 2 }));
       expect(r.path).toBeLessThan(4);
       expect(r.turnedDeg).toBeLessThan(90);
       expect(r.speed).toBeLessThan(0.3);
     });
+
+    it('a standing pedestrian with fixes jittering 1.5 m either side stays put', async () => {
+      const r = await settle('person', (t) => ({ x: 0, z: Math.round(t / 0.2) % 2 === 0 ? 1.5 : -1.5 }));
+      expect(r.path).toBeLessThan(2);
+      expect(r.turnedDeg).toBeLessThan(180);
+    });
+
+    it('a walking pedestrian with lateral jitter follows without zigzagging', async () => {
+      const jitter = [0.9, -1.1, 0.4, -0.7, 1.2, -0.3, 0.8, -1.0];
+      const r = await settle('person', (t) => ({ x: 1.4 * t, z: jitter[Math.round(t / 0.2) % jitter.length]! }), 300);
+      const truth = { x: 1.4 * r.elapsedS, z: 0 };
+      expect(missFrom(r, truth)).toBeLessThan(2.5);
+      expect(r.turnedDeg).toBeLessThan(270);
+    });
+  });
+
+  it('a car detected moving down a lane spawns facing along it and follows without swerving', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      const world = await testWorld();
+      const graph = world.bundle.graph;
+      const rsl = graph.laneRsls().find((r) => {
+        const geom = graph.geometry(r);
+        return geom && geom.lane.laneType === 'driving' && !geom.lane.isJunction && geom.lengthM > 80;
+      })!;
+      const reversed = graph.nominalReversed(rsl) ?? false;
+      const along = (s: number) => {
+        const sample = graph.sampleDirected({ rsl, reversed }, s);
+        return { x: sample.point.x, z: -sample.point.y, headingRad: sample.headingRad };
+      };
+      const mirror = new GhostMirror(world, 12);
+      let now = 4_000;
+      const speedMps = 8;
+      const report = (t: number) => {
+        const p = along(10 + speedMps * t);
+        mirror.ingest([detection(world, 'lane-car', p.x, p.z)], now);
+      };
+      vi.setSystemTime(now * 1000);
+      report(0);
+      const actorId = mirror.tracks.get('lane-car')!.actorId!;
+      const spawned = world.actorState(actorId)!;
+      const laneHeading = along(10).headingRad;
+      expect(Math.abs(Math.atan2(Math.sin(spawned.headingRad - laneHeading), Math.cos(spawned.headingRad - laneHeading)))).toBeLessThan(0.2);
+      let turned = 0;
+      let prev = spawned;
+      const steps = Math.round(6 / world.dt);
+      for (let step = 1; step <= steps; step++) {
+        now += world.dt;
+        vi.setSystemTime(now * 1000);
+        if (step % 2 === 0) report(step * world.dt);
+        mirror.drive();
+        world.session.advance(1);
+        const cur = world.actorState(actorId)!;
+        turned += Math.abs(Math.atan2(Math.sin(cur.headingRad - prev.headingRad), Math.cos(cur.headingRad - prev.headingRad)));
+        prev = cur;
+      }
+      const truth = along(10 + speedMps * steps * world.dt);
+      expect(Math.hypot(prev.x - truth.x, prev.z - truth.z)).toBeLessThan(4);
+      expect(Math.abs(Math.atan2(Math.sin(prev.headingRad - truth.headingRad), Math.cos(prev.headingRad - truth.headingRad)))).toBeLessThan(0.3);
+      expect((turned * 180) / Math.PI).toBeLessThan(90);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

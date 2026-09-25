@@ -190,7 +190,7 @@ export class TwinWorld {
       if (geom.lengthM < 20) continue;
       const reversed = graph.nominalReversed(rsl) ?? false;
       const sample = graph.sampleDirected({ rsl, reversed }, geom.lengthM / 2);
-      points.push({ x: sample.point.x, z: -sample.point.y, headingRad: -sample.headingRad });
+      points.push({ x: sample.point.x, z: -sample.point.y, headingRad: sample.headingRad });
     }
     this.spawnPoints = points;
     // The XODR road network is larger than the streamed browser tile bundle, so an
@@ -388,7 +388,7 @@ export class TwinWorld {
     const state = this.actorState(id);
     if (!state) return false;
     const cur = localFromScene({ x: state.x, z: state.z });
-    const headingRad = -state.headingRad;
+    const headingRad = state.headingRad;
     const previewPoint = { x: cur.x + Math.cos(headingRad), y: cur.y + Math.sin(headingRad) };
     return this.act(id, { previewPoint, previewHeadingRad: headingRad, targetSpeedMps: 0, targetAccelerationMps2: 0 });
   }
@@ -419,7 +419,7 @@ export class TwinWorld {
     const t0 = this.current.time() + this.dt;
     const first = options.points[0]!;
     const second = options.points.find((p) => Math.hypot(p.x - first.x, p.z - first.z) > 0.5) ?? first;
-    const headingRad = second === first ? 0 : -Math.atan2(-(second.z - first.z), second.x - first.x);
+    const headingRad = second === first ? 0 : Math.atan2(-(second.z - first.z), second.x - first.x);
     const route: RouteSpec = {
       kind: 'timedPolyline',
       points: options.points.map((p) => ({ timeS: t0 + p.t, x: p.x, z: p.z })),
@@ -510,15 +510,18 @@ export class TwinWorld {
   }
 }
 
-/** A 10 km straight polyline from the pose along its heading, so the engine never retires the actor. */
+/**
+ * A 10 km straight polyline from the pose along its heading, so the engine never retires the actor.
+ * Pose headings are local-frame (x, y = -z): scene forward is (cos h, -sin h).
+ */
 function freeformRoute(pose: { x: number; z: number; headingRad: number }): RouteSpec {
   return {
     kind: 'polyline',
     points: [
       { x: pose.x, z: pose.z },
       {
-        x: pose.x + FREEFORM_ROUTE_LENGTH_M * Math.cos(-pose.headingRad),
-        z: pose.z + FREEFORM_ROUTE_LENGTH_M * -Math.sin(-pose.headingRad),
+        x: pose.x + FREEFORM_ROUTE_LENGTH_M * Math.cos(pose.headingRad),
+        z: pose.z - FREEFORM_ROUTE_LENGTH_M * Math.sin(pose.headingRad),
       },
     ],
   };

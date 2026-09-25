@@ -7,12 +7,16 @@
  *    gps_location{lat, lon}, confidence};
  *  - spawn at the flat-earth point (vehicle types adopt lane height/yaw when
  *    the detection lies within 4 m of a lane, like the v1 waypoint snap);
- *  - motion: chase the latest fix with the engine's dynamic body via
- *    zero-order-hold act overrides (v1 lerped transforms). Speed is
- *    proportional to the remaining gap and capped per type; inside the stop
- *    radius, or when a vehicle's fix is behind it or inside its turning
- *    circle, the actor holds its heading instead of circling the point;
- *    gaps beyond SNAP_M respawn the actor at the fix;
+ *  - fixes feed a per-track alpha-beta filter (position + velocity, world
+ *    time), which absorbs monocular jitter;
+ *  - motion: the engine's dynamic body follows the filtered estimate via
+ *    zero-order-hold act overrides (v1 lerped transforms). Moving objects are
+ *    pursued at a lookahead point along their estimated velocity with speed
+ *    feed-forward; stopped objects are approached at a speed proportional to
+ *    the gap, and inside the stop radius (or when a vehicle's target is behind
+ *    it or inside its turning circle) the actor holds its heading instead of
+ *    circling the point. Gaps beyond SNAP_M, or a chase blocked by a collision
+ *    for STUCK_S, respawn the actor at the estimate;
  *  - despawn after `despawnAfter` (12 s) without a sighting;
  *  - spawn rejections (footprint overlap) retry on the next poll, mirroring
  *    the v1 bounded-bootstrap retry.
@@ -56,9 +60,25 @@ interface ChaseProfile {
 const PERSON_CHASE: ChaseProfile = { maxSpeedMps: 3, settleM: 0.5, turnRadiusM: 0 };
 const VEHICLE_CHASE: ChaseProfile = { maxSpeedMps: 20, settleM: 1.5, turnRadiusM: 5 };
 /** Chase speed closes the remaining gap in about this long. */
-const RESPONSE_S = 1;
+const RESPONSE_S = 2;
 /** Beyond this gap the actor is respawned at the fix rather than driven there. */
 const SNAP_M = 15;
+/**
+ * Alpha-beta fix filter. Monocular fixes scatter by metres, so each fix moves
+ * the position estimate by ALPHA of its residual and the velocity by BETA/dt
+ * (critically damped: beta = alpha^2 / (2 - alpha)).
+ */
+const FILTER_ALPHA = 0.2;
+const FILTER_BETA = (FILTER_ALPHA * FILTER_ALPHA) / (2 - FILTER_ALPHA);
+/** Longest the estimate is extrapolated past the last fix. */
+const MAX_EXTRAPOLATION_S = 0.5;
+/** Estimated speed below which an object counts as stopped. */
+const STOPPED_MPS = 0.4;
+/** Moving objects are steered at a point this far ahead (in seconds of travel) along their estimated velocity. */
+const LOOKAHEAD_S = 1.5;
+/** A chase that moves less than STUCK_PROGRESS_M in STUCK_S (collision) respawns the actor at its target. */
+const STUCK_S = 1;
+const STUCK_PROGRESS_M = 0.3;
 
 const KIND_BY_TYPE: Record<string, ActorKind> = {
   car: 'car',
@@ -72,13 +92,15 @@ export interface GhostTrack {
   objectType: string;
   actorId: string | null;
   lastSeen: number;
-  /** Last raw fix; repeated polls of the same summary are not new evidence. */
-  fix: { lat: number; lon: number } | null;
-  /** Scene-space target (the latest fix). */
+  /** Filtered scene-space position and velocity at world time `t` of the last fix. */
+  estimate: { x: number; z: number; vx: number; vz: number; t: number } | null;
+  /** Scene-space target: the estimate extrapolated to now. */
   target: SceneXZ;
-  /** Scene heading used when (re)spawning. */
+  /** Local-frame heading (scene forward = (cos h, -sin h)) used when (re)spawning. */
   headingRad: number;
   holding: boolean;
+  /** Position and world time at the start of the current progress window while chasing, or null. */
+  stuckCheck: { x: number; z: number; t: number } | null;
   record: DetectionRecord;
 }
 
@@ -122,10 +144,11 @@ export class GhostMirror {
           objectType,
           actorId: null,
           lastSeen: 0,
-          fix: null,
+          estimate: null,
           target: { x: 0, z: 0 },
           headingRad: 0,
           holding: false,
+          stuckCheck: null,
           record: det,
         };
         this.tracks.set(objectId, track);
@@ -138,15 +161,54 @@ export class GhostMirror {
         track.lastSeen = now;
       }
 
-      if (!track.fix || track.fix.lat !== lat || track.fix.lon !== lon) {
-        track.fix = { lat, lon };
-        track.target = this.placementFor(track, lat, lon);
-      }
+      this.observe(track, this.placementFor(track, lat, lon));
       if (!track.actorId) this.trySpawn(track);
     }
     this.expire(now);
   }
 
+  /** Fold one fix into the track's alpha-beta estimate (world time, so replay speed scales motion). */
+  private observe(track: GhostTrack, fix: SceneXZ): void {
+    const t = this.world.time();
+    const prior = track.estimate;
+    const dt = prior ? t - prior.t : 0;
+    if (!prior || dt <= 0 || Math.hypot(fix.x - prior.x, fix.z - prior.z) > SNAP_M) {
+      if (prior && dt <= 0) {
+        // Several fixes in one tick: average the position, keep the velocity.
+        prior.x += FILTER_ALPHA * (fix.x - prior.x);
+        prior.z += FILTER_ALPHA * (fix.z - prior.z);
+      } else {
+        track.estimate = { x: fix.x, z: fix.z, vx: 0, vz: 0, t };
+      }
+    } else {
+      const px = prior.x + prior.vx * dt;
+      const pz = prior.z + prior.vz * dt;
+      const rx = fix.x - px;
+      const rz = fix.z - pz;
+      let vx = prior.vx + (FILTER_BETA / dt) * rx;
+      let vz = prior.vz + (FILTER_BETA / dt) * rz;
+      const maxSpeed = (VEHICLE_TYPES[track.objectType] ? VEHICLE_CHASE : PERSON_CHASE).maxSpeedMps;
+      const speed = Math.hypot(vx, vz);
+      if (speed > maxSpeed) {
+        vx *= maxSpeed / speed;
+        vz *= maxSpeed / speed;
+      }
+      track.estimate = { x: px + FILTER_ALPHA * rx, z: pz + FILTER_ALPHA * rz, vx, vz, t };
+    }
+    track.target = this.extrapolate(track);
+  }
+
+  private extrapolate(track: GhostTrack): SceneXZ {
+    const e = track.estimate!;
+    const ahead = Math.min(Math.max(this.world.time() - e.t, 0), MAX_EXTRAPOLATION_S);
+    return { x: e.x + e.vx * ahead, z: e.z + e.vz * ahead };
+  }
+
+  private estimatedSpeed(track: GhostTrack): number {
+    const e = track.estimate;
+    if (!e || this.world.time() - e.t > MAX_EXTRAPOLATION_S) return 0;
+    return Math.hypot(e.vx, e.vz);
+  }
   /** v1 `_location_for`: vehicles adopt the lane yaw when within 4 m of one. */
   private placementFor(track: GhostTrack, lat: number, lon: number): SceneXZ {
     const scene = sceneFromWgs84(this.world.frame, lat, lon);
@@ -158,7 +220,7 @@ export class GhostMirror {
         if (geom) {
           const directedS = reversed ? geom.lengthM - nearest.s : nearest.s;
           const sample = this.world.bundle.graph.sampleDirected({ rsl: nearest.rsl, reversed }, directedS);
-          track.headingRad = -sample.headingRad;
+          track.headingRad = sample.headingRad;
         }
       }
     }
@@ -204,26 +266,68 @@ export class GhostMirror {
         track.actorId = null;
         continue;
       }
+      if (track.estimate) track.target = this.extrapolate(track);
       const dx = track.target.x - state.x;
       const dz = track.target.z - state.z;
       const remaining = Math.hypot(dx, dz);
       if (remaining > SNAP_M) {
-        this.world.despawn(track.actorId);
-        track.actorId = null;
-        track.headingRad = Math.atan2(dz, dx);
-        track.holding = false;
-        this.trySpawn(track);
+        this.respawnAtTarget(track, dx, dz);
         continue;
       }
       const profile = VEHICLE_TYPES[track.objectType] ? VEHICLE_CHASE : PERSON_CHASE;
-      const settleM = track.holding ? 2 * profile.settleM : profile.settleM;
-      track.holding = remaining < settleM || !reachableForward(profile.turnRadiusM, state.headingRad, dx, dz);
-      if (track.holding) {
-        this.world.actHold(track.actorId);
+      const objectSpeed = this.estimatedSpeed(track);
+      let aim = track.target;
+      let speed = 0;
+      if (objectSpeed >= STOPPED_MPS) {
+        // Pure pursuit on the estimated track: heading follows the motion, speed closes the along-track gap.
+        const e = track.estimate!;
+        const ux = e.vx / objectSpeed;
+        const uz = e.vz / objectSpeed;
+        const lookaheadM = Math.max(objectSpeed * LOOKAHEAD_S, 2 * profile.settleM);
+        aim = { x: track.target.x + ux * lookaheadM, z: track.target.z + uz * lookaheadM };
+        track.holding = !reachableForward(profile.turnRadiusM, state.headingRad, aim.x - state.x, aim.z - state.z);
+        speed = Math.min(profile.maxSpeedMps, Math.max(0, objectSpeed + (dx * ux + dz * uz) / RESPONSE_S));
       } else {
-        this.world.actChase(track.actorId, track.target, Math.min(profile.maxSpeedMps, remaining / RESPONSE_S));
+        const settleM = track.holding ? 2 * profile.settleM : profile.settleM;
+        track.holding = remaining < settleM || !reachableForward(profile.turnRadiusM, state.headingRad, dx, dz);
+        speed = Math.min(profile.maxSpeedMps, remaining / RESPONSE_S);
       }
+      if (track.holding) {
+        track.stuckCheck = null;
+        this.world.actHold(track.actorId);
+        continue;
+      }
+      // Ghosts collide (and the engine's collision-avoidance brakes them); two
+      // tracks of one physical object, or a fix against a wall, can pin an
+      // actor indefinitely, sometimes while its reported speed stays high. A
+      // chase that moves under STUCK_PROGRESS_M in STUCK_S respawns at the
+      // target; if that spot is occupied the spawn retries on later polls.
+      const now = this.world.time();
+      if (speed > 0.5) {
+        const since = track.stuckCheck;
+        if (!since) {
+          track.stuckCheck = { x: state.x, z: state.z, t: now };
+        } else if (now - since.t >= STUCK_S) {
+          if (Math.hypot(state.x - since.x, state.z - since.z) < STUCK_PROGRESS_M) {
+            this.respawnAtTarget(track, dx, dz);
+            continue;
+          }
+          track.stuckCheck = { x: state.x, z: state.z, t: now };
+        }
+      } else {
+        track.stuckCheck = null;
+      }
+      this.world.actChase(track.actorId, aim, speed);
     }
+  }
+
+  private respawnAtTarget(track: GhostTrack, dx: number, dz: number): void {
+    this.world.despawn(track.actorId!);
+    track.actorId = null;
+    track.headingRad = -Math.atan2(dz, dx);
+    track.holding = false;
+    track.stuckCheck = null;
+    this.trySpawn(track);
   }
 
   setPaused(paused: boolean): void {
@@ -233,7 +337,10 @@ export class GhostMirror {
     for (const track of this.tracks.values()) {
       if (track.actorId) {
         const state = this.world.actorState(track.actorId);
-        if (state) track.target = { x: state.x, z: state.z };
+        if (state) {
+          track.target = { x: state.x, z: state.z };
+          track.estimate = { x: state.x, z: state.z, vx: 0, vz: 0, t: this.world.time() };
+        }
         this.world.despawn(track.actorId);
         track.actorId = null;
       }
@@ -294,14 +401,14 @@ export class GhostMirror {
 }
 
 /**
- * Whether a forward-only body at `headingRad` (scene) can drive to the offset
+ * Whether a forward-only body at `headingRad` can drive to the scene offset
  * (dx, dz) without looping: the point must be ahead and outside both
  * minimum-radius turning circles.
  */
 function reachableForward(turnRadiusM: number, headingRad: number, dx: number, dz: number): boolean {
   if (turnRadiusM === 0) return true;
-  // Scene z is negated local y; the local heading is the negated scene heading.
-  const h = -headingRad;
+  // headingRad is measured in the local frame (x, y = -z).
+  const h = headingRad;
   const ly = -dz;
   const forward = dx * Math.cos(h) + ly * Math.sin(h);
   const lateral = -dx * Math.sin(h) + ly * Math.cos(h);
