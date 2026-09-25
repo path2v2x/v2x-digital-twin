@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
-import type { CameraFeedState, CameraFeeds } from "@/app/lib/live-world/camera-feeds";
-import type { WorldClock, WorldReplayCapabilities } from "@/app/lib/live-world/types";
 import { cn } from "@/app/lib/utils";
-import { CameraFeed, type FeedDisplayState } from "./CameraFeed";
+import { CameraFeed, type ArchiveClock, type FeedDisplayState } from "./CameraFeed";
+import type { ArchiveAccess } from "./replay-config";
 
 export interface StripCamera {
   readonly key: string;
@@ -20,25 +19,13 @@ interface CameraStripProps {
   cameras: readonly StripCamera[];
   activeKey: string | null;
   onSelect: (key: string) => void;
-  feeds: CameraFeeds | null;
-  clock: WorldClock | null;
-  replay: WorldReplayCapabilities | null;
+  clock: ArchiveClock | null;
+  archive: ArchiveAccess | null;
   error: string | null;
 }
 
-/** Permanently open, slim column of camera frames; a click looks through that camera. */
-export function CameraStrip({ cameras, activeKey, onSelect, feeds, clock, replay, error }: CameraStripProps) {
-  const [feedStates, setFeedStates] = useState<Readonly<Record<string, CameraFeedState>>>(() => feeds?.states ?? {});
-
-  useEffect(() => {
-    if (!feeds) {
-      setFeedStates({});
-      return;
-    }
-    setFeedStates(feeds.states);
-    return feeds.subscribeStates(setFeedStates);
-  }, [feeds]);
-
+/** Permanently open, slim column of recorded camera frames; a click looks through that camera. */
+export function CameraStrip({ cameras, activeKey, onSelect, clock, archive, error }: CameraStripProps) {
   return (
     <aside className="flex h-full w-52 shrink-0 flex-col gap-2 overflow-y-auto border-l border-border bg-background/95 p-2" aria-label="Cameras" data-testid="camera-strip">
       {cameras.map(({ key, camera, rigLabel, alignable }) => (
@@ -49,10 +36,8 @@ export function CameraStrip({ cameras, activeKey, onSelect, feeds, clock, replay
           active={key === activeKey}
           alignable={alignable}
           onSelect={() => onSelect(key)}
-          feeds={feeds}
-          feedState={feedStates[camera.id] ?? "starting"}
           clock={clock}
-          replay={replay}
+          archive={archive}
         />
       ))}
       {cameras.length === 0 ? (
@@ -64,16 +49,14 @@ export function CameraStrip({ cameras, activeKey, onSelect, feeds, clock, replay
   );
 }
 
-function CameraTile({ camera, rigLabel, active, alignable, onSelect, ...feed }: {
+function CameraTile({ camera, rigLabel, active, alignable, onSelect, clock, archive }: {
   camera: PoleCamera;
   rigLabel: string;
   active: boolean;
   alignable: boolean;
   onSelect: () => void;
-  feeds: CameraFeeds | null;
-  feedState: CameraFeedState;
-  clock: WorldClock | null;
-  replay: WorldReplayCapabilities | null;
+  clock: ArchiveClock | null;
+  archive: ArchiveAccess | null;
 }) {
   const [display, setDisplay] = useState<FeedDisplayState>("starting");
   const label = camera.label ?? camera.id;
@@ -91,22 +74,17 @@ function CameraTile({ camera, rigLabel, active, alignable, onSelect, ...feed }: 
       )}
       data-camera-id={camera.id}
     >
-      <CameraFeed
-        camera={camera}
-        className="w-full"
-        onDisplayState={setDisplay}
-        {...feed}
-      />
+      <CameraFeed camera={camera} className="w-full" onDisplayState={setDisplay} clock={clock} archive={archive} />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-4">
         <span
           aria-hidden="true"
           className={cn(
             "size-1.5 shrink-0 rounded-full",
-            display === "live" ? "bg-red-500" : display === "replay" ? "bg-amber-400" : display === "paused" ? "bg-sky-400" : "bg-muted-foreground",
+            display === "replay" ? "bg-amber-400" : display === "paused" ? "bg-sky-400" : "bg-muted-foreground",
           )}
         />
         <span className="truncate text-[11px] font-medium text-white">{camera.id.toUpperCase()}</span>
-        <span className="ml-auto truncate text-[10px] text-white/60">{active ? "Viewing" : display === "live" ? "Live" : display === "replay" ? "Replay" : display === "paused" ? "Paused" : ""}</span>
+        <span className="ml-auto truncate text-[10px] text-white/60">{active ? "Viewing" : display === "replay" ? "Playing" : display === "paused" ? "Paused" : ""}</span>
       </div>
     </button>
   );

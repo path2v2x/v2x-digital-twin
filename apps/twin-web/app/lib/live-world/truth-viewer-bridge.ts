@@ -151,7 +151,7 @@ function catalogIdFor(actorClass: TruthFrame['actors'][number]['class']): string
     case 'motorcycle': return 'vehicle.motorcycle';
     case 'bicycle': return 'vehicle.bicycle';
     case 'pedestrian': return 'pedestrian.adult';
-    case 'prop': return 'object.cone';
+    case 'prop': return 'construction.traffic_cone';
     default: return 'vehicle.sedan';
   }
 }

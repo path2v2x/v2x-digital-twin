@@ -1,8 +1,6 @@
 import type { NextConfig } from "next";
 
-// Loopback twin HTTP origin; MJPEG streams are proxied same-origin.
-const twinHttpOrigin = process.env.TWIN_HTTP_ORIGIN?.trim();
-// Development only: fetch map bundles, actor models and camera rigs from a deployed twin host.
+// Development only: fetch map bundles, actor models, camera rigs, detection history and camera archive from a deployed twin host.
 const devUpstream = process.env.TWIN_DEV_UPSTREAM?.trim().replace(/\/+$/, "");
 const allowedDevOrigins = (process.env.TWIN_ALLOWED_DEV_ORIGINS ?? "")
   .split(",")
@@ -12,9 +10,8 @@ const allowedDevOrigins = (process.env.TWIN_ALLOWED_DEV_ORIGINS ?? "")
 const nextConfig: NextConfig = {
   async rewrites() {
     return [
-      ...(twinHttpOrigin ? [{ source: "/streams/:path*", destination: `${twinHttpOrigin}/streams/:path*` }] : []),
       ...(devUpstream
-        ? ["map-bundles", "catalog", "drive-rigs"].map((prefix) => ({ source: `/${prefix}/:path*`, destination: `${devUpstream}/${prefix}/:path*` }))
+        ? ["map-bundles", "catalog", "drive-rigs", "detections", "archive"].map((prefix) => ({ source: `/${prefix}/:path*`, destination: `${devUpstream}/${prefix}/:path*` }))
         : []),
     ];
   },

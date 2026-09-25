@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Camera, LogIn, LogOut, RotateCcw } from "lucide-react";
+import { ArrowLeft, Camera, LogIn, LogOut, RotateCcw } from "lucide-react";
 import type { EditorController, EditorDocument, EditorState, ScenarioMapEntry } from "@simforge-oss/editor";
 import { findRigFeature, resolveCameraPose } from "@simforge-oss/maps/camera-rig";
 import type { CityViewer, CityViewerOptions } from "@simforge-oss/viewer";
@@ -26,23 +26,37 @@ import { timelineActorLabels, type V1TimelineBrowserPlayback } from "@/app/dashb
 import { ScenarioEditorReadout, ScenarioEditorShell } from "@/app/dashboard/scenario/editor/shell";
 import { EditorSceneEnvironmentBridge } from "@/app/dashboard/scenario/editor/EditorSceneEnvironmentBridge";
 import { DocumentAmbientTrafficPanel } from "@/app/lib/scenario/ambient/AmbientTrafficPanel";
-import { createMultiplexedCameraFeeds, type CameraFeedState, type CameraFeeds } from "@/app/lib/live-world/camera-feeds";
-import { createAuthoredWorldSource, type AuthoredWorldSource } from "@/app/lib/live-world/authored-world-source";
-import { createRemoteWorldSource } from "@/app/lib/live-world/remote-world-source";
+import { createAuthoredWorldSource, type AuthoredWorldSource, type RecordedLayer } from "@/app/lib/live-world/authored-world-source";
 import { createTruthViewerBridge, type TruthViewerBridge } from "@/app/lib/live-world/truth-viewer-bridge";
-import type { WorldClock, WorldReplayCapabilities, WorldSource, WorldSourceStatus } from "@/app/lib/live-world/types";
+import type { WorldSource } from "@/app/lib/live-world/types";
 import { useWorldSource } from "@/app/lib/live-world/use-world-source";
+import { buildRecordedTracks, fetchWindowDetections, recordedScenarioParts, sceneFrameFromProj } from "@/app/lib/recorded/recorded-tracks";
 import type { ScenarioAuthoringQuality } from "@/app/lib/scenario/contracts";
 import { useEditorRuntime } from "@/app/lib/scenario/editor/use-editor-runtime";
+import type { ArchiveClock } from "./CameraFeed";
 import { CameraStrip, type StripCamera } from "./CameraStrip";
+import { CameraTimeline, type TimeSelection } from "./CameraTimeline";
 import { CameraViewOverlay } from "./CameraViewOverlay";
 import { actorSpeedKph, formatClipTime } from "./drive-telemetry";
 import { usePoleCameras } from "./pole-cameras";
-import { TimeBar } from "./TimeBar";
+import { DETECTION_COVERAGE_URL, DETECTION_HISTORY_URL, useReplayConfig, type ReplayConfig } from "./replay-config";
 import { TwinTopBar } from "./TwinTopBar";
 import { useCameraLookThrough, type LookThroughTarget } from "./use-camera-look-through";
 
 type FollowMode = "chase" | "dash";
+
+/** Longest real-world window that can be simulated. */
+const MAX_WINDOW_MS = 60_000;
+const MIN_WINDOW_MS = 2_000;
+/** Camera tiles follow the scrubbed playhead once it settles. */
+const PLAYHEAD_SETTLE_MS = 300;
+
+type Phase = { kind: "pick" } | { kind: "edit"; window: TimeSelection };
+
+type RecordedState =
+  | { status: "loading" }
+  | { status: "ready"; layer: RecordedLayer; trackCount: number }
+  | { status: "error"; message: string };
 
 const CONTROLLED_KEY_CODES: Record<string, true> = {
   ArrowUp: true,
@@ -91,22 +105,20 @@ export function TwinApp() {
 }
 
 function TwinSurface({ map }: { map: ScenarioMapEntry }) {
-  const twinUrl = useMemo(() => resolveTwinUrl(), []);
-  const [twinSource, setTwinSource] = useState<WorldSource | null>(null);
-  const [twinCreationError, setTwinCreationError] = useState<string | null>(null);
+  const replay = useReplayConfig();
+  const nowMs = useNow(30_000);
+  const [phase, setPhase] = useState<Phase>({ kind: "pick" });
+  const [playheadMs, setPlayheadMs] = useState(initialPlayheadMs);
+  const [selection, setSelection] = useState<TimeSelection | null>(null);
+  const settledPlayheadMs = useSettled(playheadMs, PLAYHEAD_SETTLE_MS);
+  const [recorded, setRecorded] = useState<RecordedState>({ status: "loading" });
   const [authoredSource, setAuthoredSource] = useState<AuthoredWorldSource | null>(null);
   const [authoredCreationError, setAuthoredCreationError] = useState<string | null>(null);
   const [viewer, setViewer] = useState<CityViewer | null>(null);
-  const [liveBridge, setLiveBridge] = useState<TruthViewerBridge | null>(null);
-  const [authoredBridge, setAuthoredBridge] = useState<TruthViewerBridge | null>(null);
+  const [bridge, setBridge] = useState<TruthViewerBridge | null>(null);
   const [viewerError, setViewerError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [quality, setQuality] = useState<ScenarioAuthoringQuality>("high");
-  const [cameraFeeds, setCameraFeeds] = useState<CameraFeeds | null>(null);
-  const [feedStates, setFeedStates] = useState<Readonly<Record<string, CameraFeedState>>>({});
-  const [clock, setClock] = useState<WorldClock | null>(null);
-  const [replay, setReplay] = useState<WorldReplayCapabilities | null>(null);
-  const [replayError, setReplayError] = useState<string | null>(null);
   const [followMode, setFollowMode] = useState<FollowMode>("chase");
   const [egoActorId, setEgoActorId] = useState<string | null>(null);
   const [egoActorLabel, setEgoActorLabel] = useState<string | null>(null);
@@ -118,10 +130,11 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   const [documentRevision, setDocumentRevision] = useState(0);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const preparedDocumentHashRef = useRef<string | null>(null);
-  const twin = useWorldSource(twinSource);
   const authored = useWorldSource(authoredSource);
   const transport = authoredSource?.transport ?? null;
   const poleCameras = usePoleCameras(map.browserManifestUrl);
+  const editing = phase.kind === "edit";
+  const window_ = phase.kind === "edit" ? phase.window : null;
 
   const onDocumentChange = useCallback((document: EditorDocument) => {
     const nextHash = contentHash(document.data);
@@ -140,33 +153,51 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     : null;
   const availableEgoActorId = authoredSource?.selectEgo(selectedVehicleRole?.id) ?? null;
 
-  // The shared twin world: live detections, replay, and camera feeds.
+  // The window's real-world actors: detection history → smoothed timed tracks.
+  const windowStartMs = window_?.startMs ?? null;
+  const windowEndMs = window_?.endMs ?? null;
+  const georeference = replay.config?.georeference ?? null;
   useEffect(() => {
-    if (!twinUrl) {
-      setTwinCreationError("No twin configured: set NEXT_PUBLIC_TWIN_URL or pass ?twin=");
-      return;
-    }
-    const source = createRemoteWorldSource({ truthUrl: `${twinUrl}/twin`, commandUrl: `${twinUrl}/drive` });
-    const feeds = createMultiplexedCameraFeeds({ url: `${twinUrl}/camera-feeds` });
-    setTwinSource(source);
-    setCameraFeeds(feeds);
-    return () => {
-      setTwinSource(null);
-      setCameraFeeds(null);
-      source.close();
-      feeds.close();
-    };
-  }, [twinUrl]);
+    if (windowStartMs === null || windowEndMs === null || !georeference) return;
+    const controller = new AbortController();
+    setRecorded({ status: "loading" });
+    fetchWindowDetections(DETECTION_HISTORY_URL, windowStartMs, windowEndMs, { signal: controller.signal })
+      .then((detections) => {
+        const tracks = buildRecordedTracks(detections, { windowStartMs, windowEndMs, toScene: sceneFrameFromProj(georeference) });
+        const parts = recordedScenarioParts(tracks, (windowEndMs - windowStartMs) / 1_000);
+        setRecorded({ status: "ready", layer: parts, trackCount: tracks.length });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        const message = errorMessage(error);
+        setRecorded({ status: "error", message });
+        toast.error("Recorded detections could not load", { description: message });
+      });
+    return () => controller.abort();
+  }, [georeference, windowEndMs, windowStartMs]);
 
-  // The authored scenario from the editor, simulated in this browser beside the twin.
+  // The scenario clip is the selected window, starting at its first instant.
   useEffect(() => {
-    if (!editorDocument) return;
+    if (!editorDocument || windowStartMs === null || windowEndMs === null) return;
+    const clipSeconds = (windowEndMs - windowStartMs) / 1_000;
+    const choreography = editorDocument.data.choreography;
+    if (choreography.clipSeconds !== clipSeconds || choreography.warmupSeconds !== 0) {
+      editorDocument.setClip({ clipSeconds, warmupSeconds: 0 });
+    }
+  }, [editorDocument, windowEndMs, windowStartMs]);
+
+  // The authored scenario plus the recorded layer, simulated in this browser.
+  const recordedLayer = recorded.status === "ready" ? recorded.layer : null;
+  useEffect(() => {
+    if (!editorDocument || !recordedLayer || windowStartMs === null || windowEndMs === null) return;
+    const clipSeconds = (windowEndMs - windowStartMs) / 1_000;
+    if (editorDocument.data.choreography.clipSeconds !== clipSeconds) return;
     let disposed = false;
     let opened: AuthoredWorldSource | null = null;
     preparedDocumentHashRef.current = contentHash(editorDocument.data);
     setAuthoredCreationError(null);
     setAuthoredSource(null);
-    void createAuthoredWorldSource({ document: editorDocument, map, tickHz: 20 })
+    void createAuthoredWorldSource({ document: editorDocument, map, tickHz: 20, recorded: recordedLayer, clipSeconds })
       .then((next) => {
         if (disposed) return next.close();
         opened = next;
@@ -176,14 +207,14 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
         if (disposed) return;
         const message = errorMessage(error);
         setAuthoredCreationError(message);
-        toast.error("Scenario could not start", { description: message });
+        toast.error("Simulation could not start", { description: message });
       });
     return () => {
       disposed = true;
       setAuthoredSource(null);
       opened?.close();
     };
-  }, [documentRevision, editorDocument, map]);
+  }, [documentRevision, editorDocument, map, recordedLayer, windowEndMs, windowStartMs]);
 
   useEffect(() => {
     if (!authoredSource) return;
@@ -192,64 +223,25 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   }, [authoredSource]);
 
   useEffect(() => {
-    const unsubscribers = [twinSource, authoredSource].flatMap((source) =>
-      source?.subscribeWarnings
-        ? [source.subscribeWarnings((message) => toast.warning("World notice", { description: message, duration: 12000 }))]
-        : [],
-    );
-    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
-  }, [authoredSource, twinSource]);
+    if (!authoredSource?.subscribeWarnings) return;
+    return authoredSource.subscribeWarnings((message) => toast.warning("World notice", { description: message, duration: 12000 }));
+  }, [authoredSource]);
 
   useEffect(() => {
-    if (!twinSource?.subscribeClock) {
-      setClock(null);
-      return;
-    }
-    return twinSource.subscribeClock(setClock);
-  }, [twinSource]);
-
+    if (!bridge || !authoredSource) return;
+    return authoredSource.subscribeFrames((frame) => bridge.apply(frame));
+  }, [bridge, authoredSource]);
   useEffect(() => {
-    if (!twinSource?.subscribeReplay) {
-      setReplay(null);
-      setReplayError(null);
-      return;
-    }
-    return twinSource.subscribeReplay((capabilities, error) => {
-      setReplay(capabilities);
-      setReplayError(error);
-    });
-  }, [twinSource]);
-
-  useEffect(() => {
-    if (!cameraFeeds) {
-      setFeedStates({});
-      return;
-    }
-    setFeedStates(cameraFeeds.states);
-    return cameraFeeds.subscribeStates(setFeedStates);
-  }, [cameraFeeds]);
-
-  useEffect(() => {
-    if (!liveBridge || !twinSource) return;
-    return twinSource.subscribeFrames((frame) => liveBridge.apply(frame));
-  }, [liveBridge, twinSource]);
-  useEffect(() => {
-    if (!authoredBridge || !authoredSource) return;
-    return authoredSource.subscribeFrames((frame) => authoredBridge.apply(frame));
-  }, [authoredBridge, authoredSource]);
-  useEffect(() => {
-    if (!authoredBridge) return;
-    authoredBridge.setFollow(driving && !transport?.completed ? egoActorId : null, followMode);
-  }, [authoredBridge, driving, egoActorId, followMode, transport, transportRevision]);
-  useEffect(() => () => liveBridge?.dispose(), [liveBridge]);
-  useEffect(() => () => authoredBridge?.dispose(), [authoredBridge]);
+    if (!bridge) return;
+    bridge.setFollow(driving && !transport?.completed ? egoActorId : null, followMode);
+  }, [bridge, driving, egoActorId, followMode, transport, transportRevision]);
+  useEffect(() => () => bridge?.dispose(), [bridge]);
 
   useDriveControls(authoredSource, driving ? egoActorId : null);
 
   const onViewerReady = useCallback((readyViewer: CityViewer) => {
     setViewer(readyViewer);
-    setLiveBridge(createTruthViewerBridge(readyViewer, { layer: "twin-live", groundLift: true }));
-    setAuthoredBridge(createTruthViewerBridge(readyViewer, { layer: "drive-live", groundLift: true }));
+    setBridge(createTruthViewerBridge(readyViewer, { layer: "drive-live", groundLift: true }));
     setViewerError(null);
   }, []);
 
@@ -265,6 +257,10 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
         }));
       }),
     [poleCameras.features, poleCameras.rigs],
+  );
+  const timelineCameras = useMemo(
+    () => stripCameras.map(({ camera }) => ({ id: camera.id, label: camera.id.toUpperCase() })),
+    [stripCameras],
   );
   const lookTargets = useMemo(() => {
     const targets = new Map<string, LookThroughTarget>();
@@ -321,7 +317,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     setEnteringDrive(true);
     try {
       const actorId = availableEgoActorId;
-      if (!actorId) throw new Error("Place an authored vehicle before entering drive");
+      if (!actorId) throw new Error("Place a vehicle before entering drive");
       lookThrough.release(false);
       authoredSource.setEgo(actorId);
       setEgoActorId(actorId);
@@ -332,7 +328,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
         ?? null;
       const timelineLabel = role ? timelineActorLabels(editorDocument.data.roles).get(role.id) : null;
       setEgoActorLabel(timelineLabel ?? role?.label ?? actorId);
-      authoredBridge?.setFollow(actorId, followMode);
+      bridge?.setFollow(actorId, followMode);
       setExpandedTool(null);
       setDriving(true);
     } catch (error) {
@@ -340,12 +336,12 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     } finally {
       setEnteringDrive(false);
     }
-  }, [authoredBridge, authoredSource, availableEgoActorId, editorDocument, enteringDrive, followMode, lookThrough, selectedVehicleRole, viewer]);
+  }, [authoredSource, availableEgoActorId, bridge, editorDocument, enteringDrive, followMode, lookThrough, selectedVehicleRole, viewer]);
 
   const exitDrive = useCallback(() => {
     // Any of these can throw once the ego is released or the clip completed; UI state must still clear.
     try {
-      authoredBridge?.setFollow(null);
+      bridge?.setFollow(null);
       if (authoredSource && egoActorId) authoredSource.control({ actorId: egoActorId, steer: 0, throttle: 0, brake: 0 });
       authoredSource?.setEgo(null);
     } catch (error) {
@@ -356,17 +352,46 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
       setEgoActorLabel(null);
       setCameraNotice(null);
     }
-  }, [authoredBridge, authoredSource, egoActorId]);
+  }, [authoredSource, bridge, egoActorId]);
+
+  const pickedWindow = useMemo<TimeSelection | null>(() => {
+    const candidate = selection ?? { startMs: playheadMs, endMs: Math.min(playheadMs + MAX_WINDOW_MS, nowMs) };
+    const lengthMs = candidate.endMs - candidate.startMs;
+    return lengthMs >= MIN_WINDOW_MS && lengthMs <= MAX_WINDOW_MS ? candidate : null;
+  }, [nowMs, playheadMs, selection]);
+  const simulateDisabledReason = !replay.config
+    ? replay.error ?? "Loading recording configuration…"
+    : !replay.config.historyAvailable
+      ? "Detection history is unavailable on the server"
+      : !pickedWindow
+        ? `Select between ${MIN_WINDOW_MS / 1_000} and ${MAX_WINDOW_MS / 1_000} seconds`
+        : null;
+
+  const startSimulation = useCallback(() => {
+    if (!pickedWindow || simulateDisabledReason) return;
+    lookThrough.release(false);
+    setPhase({ kind: "edit", window: { startMs: Math.round(pickedWindow.startMs), endMs: Math.round(pickedWindow.endMs) } });
+  }, [lookThrough, pickedWindow, simulateDisabledReason]);
+
+  const changeRange = useCallback(() => {
+    if (driving) exitDrive();
+    setExpandedTool(null);
+    controller?.setSelection([]);
+    if (window_) setPlayheadMs(window_.startMs);
+    setAuthoredSource(null);
+    setRecorded({ status: "loading" });
+    setPhase({ kind: "pick" });
+  }, [controller, driving, exitDrive, window_]);
 
   const driveSpeedKph = actorSpeedKph(authored.latestFrame, driving ? egoActorId : null);
   const driveClipTime = transport ? formatClipTime(transport.time, transport.duration) : null;
   useEffect(() => {
-    if (!driving || !authoredBridge || !egoActorId || !authored.latestFrame || transport?.completed) return;
+    if (!driving || !bridge || !egoActorId || !authored.latestFrame || transport?.completed) return;
     const present = authored.latestFrame.scene.actors.some((actor) => actor.id === egoActorId && actor.kind !== "despawn");
     if (present || cameraNotice) return;
-    authoredBridge.setFollow(null);
+    bridge.setFollow(null);
     setCameraNotice(`Driving view released because ${egoActorLabel ?? "the ego vehicle"} is unavailable.`);
-  }, [authored.latestFrame, authoredBridge, cameraNotice, driving, egoActorId, egoActorLabel, transport?.completed]);
+  }, [authored.latestFrame, bridge, cameraNotice, driving, egoActorId, egoActorLabel, transport?.completed]);
 
   const timelinePlayback = useMemo<V1TimelineBrowserPlayback | null>(() => {
     if (!transport) return null;
@@ -386,65 +411,81 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driving, transport, transportRevision]);
 
-  const twinStatus: WorldSourceStatus = twinCreationError ? "error" : twin.status;
-  const twinError = twinCreationError ?? twin.error;
-  const authoredError = authoredCreationError ?? runtime.error ?? (authored.status === "error" ? authored.error : null);
+  // Cameras show the scrubbed instant while picking, and window start + simulation time while editing.
+  const cameraClock = useMemo<ArchiveClock | null>(() => {
+    if (!window_) return { timeMs: settledPlayheadMs, speed: 0 };
+    if (!transport) return { timeMs: window_.startMs, speed: 0, prefetch: true };
+    return { timeMs: window_.startMs + transport.time * 1_000, speed: transport.playing ? 1 : 0, prefetch: true };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settledPlayheadMs, transport, transportRevision, window_]);
+  const archive = replay.config?.archive ?? null;
+
+  const scenarioError = authoredCreationError ?? runtime.error ?? (authored.status === "error" ? authored.error : null);
   const driveUnavailableReason = authoredSource && !availableEgoActorId
-    ? "Place an authored vehicle and wait for it to finish preparing before entering drive."
+    ? "Place a vehicle and wait for it to finish preparing before entering drive."
     : null;
 
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">
-      <TwinTopBar timeBar={<TimeBar source={twinSource} capabilities={replay} clock={clock} replayError={replayError} />} />
+      <TwinTopBar center={window_ ? <WindowReadout window={window_} recorded={recorded} onChangeRange={changeRange} /> : <PickReadout />} />
       <div className="flex min-h-0 flex-1">
         <div className="relative min-w-0 flex-1">
-          <EditorConfigurationBlockProvider blocked={driving}>
+          <EditorConfigurationBlockProvider blocked={driving || !editing}>
             <EditorOverlayProvider
               documentKey={editorDocument}
               selectedActorId={selectedActor?.id ?? null}
-              suppressActorDetails={driving || state?.mode === "drawingRoute"}
+              suppressActorDetails={driving || !editing || state?.mode === "drawingRoute"}
               onSelectActor={selectActor}
             >
               <EditorHeader document={editorDocument} quality={quality} onQualityChange={setQuality} viewer={viewer} experience="advanced" />
-              <TopBarActionsPortal>
-                <div className="flex items-center gap-1">
-                  {driving ? (
-                    <>
-                      <Button type="button" size="sm" variant="outline" onClick={() => setFollowMode((mode) => (mode === "chase" ? "dash" : "chase"))}>
-                        <Camera /> {followMode === "chase" ? "Chase" : "Dash"}
+              {editing ? (
+                <TopBarActionsPortal>
+                  <div className="flex items-center gap-1">
+                    {driving ? (
+                      <>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setFollowMode((mode) => (mode === "chase" ? "dash" : "chase"))}>
+                          <Camera /> {followMode === "chase" ? "Chase" : "Dash"}
+                        </Button>
+                        <Button type="button" size="sm" variant="secondary" onClick={exitDrive}>
+                          <LogOut /> Exit drive
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!authoredSource || !viewer || authored.status !== "running" || !availableEgoActorId || enteringDrive}
+                        title={driveUnavailableReason ?? undefined}
+                        onClick={enterDrive}
+                      >
+                        <LogIn /> {enteringDrive ? "Entering…" : "Enter drive"}
                       </Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={exitDrive}>
-                        <LogOut /> Exit drive
-                      </Button>
-                    </>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!authoredSource || !viewer || authored.status !== "running" || !availableEgoActorId || enteringDrive}
-                      title={driveUnavailableReason ?? undefined}
-                      onClick={enterDrive}
-                    >
-                      <LogIn /> {enteringDrive ? "Entering…" : "Enter drive"}
-                    </Button>
-                  )}
-                </div>
-              </TopBarActionsPortal>
+                    )}
+                  </div>
+                </TopBarActionsPortal>
+              ) : null}
               {/* The authored document owns weather and time of day. */}
               <EditorSceneEnvironmentBridge active={mapLoaded} document={editorDocument} quality={quality} viewer={viewer} />
               <ScenarioEditorShell
                 className="h-full min-h-0 bg-background text-foreground"
                 data-testid="twin-surface"
+                data-phase={phase.kind}
                 canvasMode="interactive"
                 header={null}
                 leftSidebar={!driving ? (slotProps) => (
-                  <div {...slotProps} className={cn(slotProps.className, "flex h-full")}>
+                  <div
+                    {...slotProps}
+                    className={cn(slotProps.className, "flex h-full", !editing && "pointer-events-none select-none opacity-40")}
+                    inert={!editing}
+                    aria-disabled={!editing}
+                    data-testid="actor-library"
+                  >
                     <ActorLibraryRail
                       controller={controller}
                       state={state}
                       hostRef={hostRef}
                       canvas={viewer?.renderer.domElement ?? null}
-                      activeTool={expandedTool}
+                      activeTool={editing ? expandedTool : null}
                       onExpandedToolChange={selectLibraryTool}
                       document={editorDocument}
                       trafficDetails={editorDocument ? <DocumentAmbientTrafficPanel document={editorDocument} /> : null}
@@ -480,10 +521,8 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                           camera={activeCamera.camera}
                           rigLabel={activeCamera.rigLabel}
                           onExit={() => lookThrough.release(true)}
-                          feeds={cameraFeeds}
-                          feedState={feedStates[activeCamera.camera.id] ?? "starting"}
-                          clock={clock}
-                          replay={replay}
+                          clock={cameraClock}
+                          archive={archive}
                         />
                       ) : null}
                     </div>
@@ -491,9 +530,9 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                 )}
                 statusOverlay={(slotProps) => (
                   <div {...slotProps}>
-                    {state?.mode === "placing" ? (
+                    {editing && state?.mode === "placing" ? (
                       <PlacementCursorHint state={state} hostRef={hostRef} canvas={viewer?.renderer.domElement ?? null} />
-                    ) : state?.mode && state.mode !== "idle" ? (
+                    ) : editing && state?.mode && state.mode !== "idle" ? (
                       <div className="pointer-events-auto"><EditorModeBanner state={state} controller={controller} /></div>
                     ) : null}
                     {driving && driveClipTime ? (
@@ -513,26 +552,54 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                         <span className="text-editor-text">{cameraNotice}</span>
                       </ScenarioEditorReadout>
                     ) : null}
-                    {transport?.completed ? (
+                    {editing && transport?.completed ? (
                       <ScenarioEditorReadout className="pointer-events-auto absolute left-1/2 top-4 flex -translate-x-1/2 items-center gap-3" role="status">
-                        <span className="text-editor-text">Scenario complete · {formatClipTime(transport.time, transport.duration)} · Free camera restored</span>
+                        <span className="text-editor-text">Simulation complete · {formatClipTime(transport.time, transport.duration)}</span>
                         <Button type="button" size="sm" variant="secondary" onClick={() => transport.play()}>
                           <RotateCcw /> Replay
                         </Button>
                       </ScenarioEditorReadout>
                     ) : null}
-                    <WorldStatusNotices twinStatus={twinStatus} twinError={twinError} authoredError={authoredError} viewerError={viewerError} mapLoaded={mapLoaded} />
+                    <StatusNotices
+                      viewerError={viewerError}
+                      mapLoaded={mapLoaded}
+                      replayError={replay.error}
+                      recorded={editing ? recorded : null}
+                      simulating={editing && recorded.status === "ready" && !authoredSource && !scenarioError}
+                      scenarioError={editing ? scenarioError : null}
+                    />
                   </div>
                 )}
-                floatingOverlay={editorDocument ? (
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-auto max-h-[min(65vh,520px)] justify-center px-4" data-testid="floating-timeline-layer">
-                    <div className="pointer-events-auto relative h-auto max-h-[min(65vh,520px)] w-full max-w-[920px] min-w-0">
-                      <TwinTimelineDock controller={controller} document={editorDocument} state={state} playback={timelinePlayback} readOnly={driving} />
+                floatingOverlay={editing ? (
+                  editorDocument ? (
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-auto max-h-[min(65vh,520px)] justify-center px-4" data-testid="floating-timeline-layer">
+                      <div className="pointer-events-auto relative h-auto max-h-[min(65vh,520px)] w-full max-w-[920px] min-w-0">
+                        <TwinTimelineDock controller={controller} document={editorDocument} state={state} playback={timelinePlayback} readOnly={driving} />
+                      </div>
                     </div>
+                  ) : null
+                ) : (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3">
+                    <CameraTimeline
+                      className="pointer-events-auto"
+                      cameras={timelineCameras}
+                      nowMs={nowMs}
+                      earliestMs={nowMs - (replay.config?.retentionHours ?? 72) * 3_600_000}
+                      coverageUrl={DETECTION_COVERAGE_URL}
+                      archiveListUrlTemplate={archive?.listUrlTemplate ?? null}
+                      archiveOffsetSeconds={archive?.offsetSeconds ?? 0}
+                      playheadMs={playheadMs}
+                      onPlayheadChange={setPlayheadMs}
+                      selection={selection}
+                      onSelectionChange={setSelection}
+                      maxSelectionMs={MAX_WINDOW_MS}
+                      onSimulate={startSimulation}
+                      simulateDisabledReason={simulateDisabledReason}
+                    />
                   </div>
-                ) : null}
+                )}
               />
-              <EditorOverlayHost controller={controller} document={editorDocument} showActorMotionControls />
+              {editing ? <EditorOverlayHost controller={controller} document={editorDocument} showActorMotionControls /> : null}
             </EditorOverlayProvider>
           </EditorConfigurationBlockProvider>
         </div>
@@ -540,12 +607,42 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
           cameras={stripCameras}
           activeKey={lookThrough.activeKey}
           onSelect={lookThrough.toggle}
-          feeds={cameraFeeds}
-          clock={clock}
-          replay={replay}
+          clock={cameraClock}
+          archive={archive}
           error={poleCameras.error}
         />
       </div>
+    </div>
+  );
+}
+
+function PickReadout() {
+  return (
+    <span className="truncate text-xs text-muted-foreground" data-testid="phase-readout">
+      Pick up to {MAX_WINDOW_MS / 1_000} s of recorded time to simulate
+    </span>
+  );
+}
+
+function WindowReadout({ window, recorded, onChangeRange }: { window: TimeSelection; recorded: RecordedState; onChangeRange: () => void }) {
+  const seconds = Math.round((window.endMs - window.startMs) / 1_000);
+  const day = new Date(window.startMs).toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+  const time = (ms: number) => new Date(ms).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  return (
+    <div className="flex min-w-0 items-center gap-2" data-testid="phase-readout">
+      <Button type="button" size="sm" variant="outline" onClick={onChangeRange} data-testid="change-range">
+        <ArrowLeft /> Change range
+      </Button>
+      <span className="truncate text-xs tabular-nums text-foreground">
+        {day} · {time(window.startMs)}–{time(window.endMs)} · {seconds} s
+      </span>
+      <span className="truncate text-xs text-muted-foreground">
+        {recorded.status === "ready"
+          ? `${recorded.trackCount} recorded ${recorded.trackCount === 1 ? "actor" : "actors"}`
+          : recorded.status === "loading"
+            ? "Loading detections…"
+            : "Detections unavailable"}
+      </span>
     </div>
   );
 }
@@ -574,20 +671,22 @@ function TwinTimelineDock({ controller, document, state, playback, readOnly }: {
   );
 }
 
-function WorldStatusNotices({ twinStatus, twinError, authoredError, viewerError, mapLoaded }: {
-  twinStatus: WorldSourceStatus;
-  twinError: string | null;
-  authoredError: string | null;
+function StatusNotices({ viewerError, mapLoaded, replayError, recorded, simulating, scenarioError }: {
   viewerError: string | null;
   mapLoaded: boolean;
+  replayError: string | null;
+  recorded: RecordedState | null;
+  simulating: boolean;
+  scenarioError: string | null;
 }) {
   const notices: Array<{ key: string; text: string; error: boolean }> = [];
   if (viewerError) notices.push({ key: "map", text: viewerError, error: true });
   else if (!mapLoaded) notices.push({ key: "map", text: "Loading map…", error: false });
-  if (twinError || twinStatus === "error") notices.push({ key: "twin", text: `Twin: ${twinError ?? "connection failed"}`, error: true });
-  else if (twinStatus === "connecting" || twinStatus === "idle") notices.push({ key: "twin", text: "Connecting to the twin…", error: false });
-  else if (twinStatus === "closed") notices.push({ key: "twin", text: "Twin connection closed", error: true });
-  if (authoredError) notices.push({ key: "scenario", text: `Scenario: ${authoredError}`, error: true });
+  if (replayError) notices.push({ key: "replay", text: `Recordings: ${replayError}`, error: true });
+  if (recorded?.status === "loading") notices.push({ key: "recorded", text: "Loading recorded detections…", error: false });
+  else if (recorded?.status === "error") notices.push({ key: "recorded", text: `Detections: ${recorded.message}`, error: true });
+  if (simulating) notices.push({ key: "sim", text: "Preparing simulation…", error: false });
+  if (scenarioError) notices.push({ key: "scenario", text: `Scenario: ${scenarioError}`, error: true });
   if (notices.length === 0) return null;
   return (
     <div className="absolute left-1/2 top-4 flex -translate-x-1/2 flex-col items-center gap-1">
@@ -607,13 +706,32 @@ function WorldStatusNotices({ twinStatus, twinError, authoredError, viewerError,
   );
 }
 
-function resolveTwinUrl(): string | null {
-  if (typeof window === "undefined") return null;
-  const raw = new URLSearchParams(window.location.search).get("twin") ?? process.env.NEXT_PUBLIC_TWIN_URL ?? null;
-  if (!raw) return null;
-  if (/^wss?:\/\//.test(raw)) return raw.replace(/\/+$/, "");
-  const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${scheme}://${window.location.hostname}:${raw}`;
+/** `?at=<ISO time>` presets the playhead; otherwise five minutes ago. */
+function initialPlayheadMs(): number {
+  const fallback = Date.now() - 5 * 60_000;
+  if (typeof window === "undefined") return fallback;
+  const at = Date.parse(new URLSearchParams(window.location.search).get("at") ?? "");
+  return Number.isFinite(at) && at <= Date.now() ? at : fallback;
+}
+
+/** Wall clock, refreshed every `intervalMs`. */
+function useNow(intervalMs: number): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), intervalMs);
+    return () => window.clearInterval(timer);
+  }, [intervalMs]);
+  return now;
+}
+
+/** `value`, once it has stopped changing for `delayMs`. */
+function useSettled<T>(value: T, delayMs: number): T {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSettled(value), delayMs);
+    return () => window.clearTimeout(timer);
+  }, [delayMs, value]);
+  return settled;
 }
 
 function directMapEntry({ manifestUrl, topologyUrl, label }: { manifestUrl: string; topologyUrl: string | null; label: string }): ScenarioMapEntry {

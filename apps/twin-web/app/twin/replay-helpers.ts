@@ -63,6 +63,12 @@ export function archiveClipAt(clockMs: number, leadMs = 0, segments: readonly Ar
   return lengthMs >= MIN_CLIP_MS ? clipWindow(startMs, lengthMs) : null;
 }
 
+/** The same clip, shortened to at most `maxMs`. */
+export function limitClip(clip: ArchiveClipWindow, maxMs: number): ArchiveClipWindow {
+  const lengthMs = Math.max(1_000, Math.floor(Math.min(clip.endMs - clip.startMs, maxMs) / 1_000) * 1_000);
+  return lengthMs === clip.endMs - clip.startMs ? clip : clipWindow(clip.startMs, lengthMs);
+}
+
 function clipWindow(startMs: number, lengthMs: number): ArchiveClipWindow {
   return {
     startMs,

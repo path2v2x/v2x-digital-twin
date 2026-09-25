@@ -6,6 +6,7 @@ import {
 } from '@simforge-oss/engine';
 import { WorldSession } from '@simforge-oss/training-env/browser';
 
+import { RECORDED_ACTOR_TAG } from '../recorded/recorded-tracks';
 import type { ControlInput } from './types';
 
 export function createAuthoredWorldSession(input: SimScenarioInput, graph: LaneGraph): WorldSession {
@@ -58,7 +59,7 @@ export function selectAuthoredEgoActor(
   preferredActorId: string | null = null,
 ): string | null {
   const candidates = input.actors.filter((actor) =>
-    isRoadActorKind(actor.kind) && !actor.static,
+    isRoadActorKind(actor.kind) && !actor.static && !actor.tags.includes(RECORDED_ACTOR_TAG),
   );
   if (preferredActorId) {
     const preferred = candidates.find((actor) =>
@@ -116,6 +117,7 @@ export function assertControllableActor(input: SimScenarioInput, actorId: string
     throw new Error(`Authored actor ${actorId} (${actor.kind}) is not a controllable road vehicle`);
   }
   if (actor.static) throw new Error(`Authored actor ${actorId} is static and has no controllable dynamics`);
+  if (actor.tags.includes(RECORDED_ACTOR_TAG)) throw new Error(`Actor ${actorId} replays a real-world recording and cannot be driven`);
   if (resolvePhysicsConfig(input).mode !== 'dynamic-v1') {
     throw new Error(`Authored actor ${actorId} cannot be driven because the world does not use dynamic-v1 physics`);
   }

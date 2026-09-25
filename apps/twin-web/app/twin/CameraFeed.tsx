@@ -4,8 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { VideoOff } from "lucide-react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
-import type { CameraFeedState, CameraFeeds } from "@/app/lib/live-world/camera-feeds";
-import type { WorldClock, WorldReplayCapabilities } from "@/app/lib/live-world/types";
 import { cn } from "@/app/lib/utils";
 import {
   archiveClipAt,
@@ -13,6 +11,7 @@ import {
   archiveVideoUrl,
   CLIP_LAG_TOLERANCE_SECONDS,
   clipStartupLagSeconds,
+  limitClip,
   MAX_CLIP_LEAD_MS,
   MIN_CLIP_MS,
   parseArchiveSegments,
@@ -21,61 +20,36 @@ import {
   type ArchiveClipWindow,
   type ArchiveSegment,
 } from "./replay-helpers";
+import type { ArchiveAccess } from "./replay-config";
 
-export type FeedDisplayState = CameraFeedState | "paused" | "no-recording";
+export type FeedDisplayState = "starting" | "replay" | "paused" | "no-recording";
+
+/** Wall-clock instant the tile shows; speed 0 holds the frame. */
+export interface ArchiveClock {
+  timeMs: number;
+  speed: number;
+  /** Paused tiles buffer a full clip (so Play starts at once) instead of a short preview. */
+  prefetch?: boolean;
+}
 
 export interface CameraFeedProps {
   camera: PoleCamera;
-  feeds: CameraFeeds | null;
-  feedState: CameraFeedState;
-  clock: WorldClock | null;
-  replay: WorldReplayCapabilities | null;
+  clock: ArchiveClock | null;
+  archive: ArchiveAccess | null;
   className?: string;
   onDisplayState?: (state: FeedDisplayState) => void;
 }
 
-/** Live multiplexed frames, or the archived recording at the replay clock. */
-export function CameraFeed({ camera, feeds, feedState, clock, replay, className, onDisplayState }: CameraFeedProps) {
-  const archiveUrlTemplate = replay?.archiveUrlTemplate ?? null;
+/** The archived recording of one camera at the given clock. */
+export function CameraFeed({ camera, clock, archive, className, onDisplayState }: CameraFeedProps) {
   return (
     <div className={cn("relative overflow-hidden bg-black", className)} style={{ aspectRatio: `${camera.intrinsics.width} / ${camera.intrinsics.height}` }}>
-      {clock?.mode === "replay" && replay && archiveUrlTemplate !== null ? (
-        <ArchiveFeed camera={camera} clock={clock} replay={replay} archiveUrlTemplate={archiveUrlTemplate} onDisplayState={onDisplayState} />
-      ) : feeds ? (
-        <LiveFeed camera={camera} feeds={feeds} feedState={feedState} onDisplayState={onDisplayState} />
+      {clock && archive ? (
+        <ArchiveFeed camera={camera} clock={clock} archive={archive} onDisplayState={onDisplayState} />
       ) : (
-        <FeedMessage title="No feed" />
+        <FeedMessage title="No recording" />
       )}
     </div>
-  );
-}
-
-function LiveFeed({ camera, feeds, feedState, onDisplayState }: { camera: PoleCamera; feeds: CameraFeeds; feedState: CameraFeedState; onDisplayState?: (state: FeedDisplayState) => void }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    return feeds.subscribeFrames(camera.id, (frame) => {
-      if (canvas.width !== frame.width) canvas.width = frame.width;
-      if (canvas.height !== frame.height) canvas.height = frame.height;
-      canvas.getContext("2d")?.drawImage(frame, 0, 0, frame.width, frame.height);
-    });
-  }, [camera.id, feeds]);
-
-  useEffect(() => {
-    onDisplayState?.(feedState);
-    if (feedState === "live" || feedState === "replay") return;
-    const canvas = canvasRef.current;
-    canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
-  }, [feedState, onDisplayState]);
-
-  return (
-    <>
-      <canvas ref={canvasRef} className="block h-full w-full object-cover" aria-label={`${camera.label ?? camera.id} live feed`} />
-      {feedState === "unavailable" ? <FeedMessage title="Feed unavailable" /> : null}
-      {feedState === "starting" ? <FeedMessage title="Connecting…" /> : null}
-    </>
   );
 }
 
@@ -139,16 +113,22 @@ function useArchiveSegments(template: string | null, channel: string, clockMs: n
   return display ?? null;
 }
 
-function ArchiveFeed({ camera, clock, replay, archiveUrlTemplate, onDisplayState }: { camera: PoleCamera; clock: WorldClock; replay: WorldReplayCapabilities; archiveUrlTemplate: string; onDisplayState?: (state: FeedDisplayState) => void }) {
+/** A held (paused) tile only needs a frame, not a five-minute stream. */
+const PREVIEW_CLIP_MS = 4_000;
+
+function ArchiveFeed({ camera, clock, archive, onDisplayState }: { camera: PoleCamera; clock: ArchiveClock; archive: ArchiveAccess; onDisplayState?: (state: FeedDisplayState) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const clockMs = clock.timeIso === null ? Number.NaN : Date.parse(clock.timeIso);
-  const segments = useArchiveSegments(replay.archiveListUrlTemplate, camera.id, clockMs, replay.archiveOffsetSeconds);
+  const clockMs = clock.timeMs;
+  const prefetch = clock.prefetch === true;
+  const segments = useArchiveSegments(archive.listUrlTemplate, camera.id, clockMs, archive.offsetSeconds);
   const [clip, setClip] = useState<ArchiveClipWindow | null>(null);
   const previousClockMs = useRef(Number.NaN);
   const retryAtMs = useRef(Number.NEGATIVE_INFINITY);
   // MediaMTX playback is not seekable, so later requests are led by the measured start-up latency.
   const leadMs = useRef(0);
   const leadCorrections = useRef(0);
+
+  const previousSpeed = useRef(0);
 
   useEffect(() => {
     if (!Number.isFinite(clockMs)) {
@@ -157,16 +137,21 @@ function ArchiveFeed({ camera, clock, replay, archiveUrlTemplate, onDisplayState
       return;
     }
     if (segments !== undefined && clockMs >= retryAtMs.current) {
+      const resumed = previousSpeed.current === 0 && clock.speed > 0;
       setClip((current) => {
-        const next = resolveArchiveClip(current, previousClockMs.current, clockMs, clock.speed, leadMs.current, segments);
+        // A short paused preview is replaced by a full clip on Play or when prefetching, not when the preview runs out.
+        const preview = current !== null && current.endMs - current.startMs <= PREVIEW_CLIP_MS;
+        const resolved = preview && (resumed || prefetch) ? archiveClipAt(clockMs, leadMs.current, segments) : resolveArchiveClip(current, previousClockMs.current, clockMs, clock.speed, leadMs.current, segments);
+        const next = resolved !== current && resolved && clock.speed === 0 && !prefetch ? limitClip(resolved, PREVIEW_CLIP_MS) : resolved;
         if (next !== current) leadCorrections.current = 0;
         return next;
       });
+      previousSpeed.current = clock.speed;
     }
     previousClockMs.current = clockMs;
-  }, [clockMs, clock.speed, segments]);
+  }, [clockMs, clock.speed, prefetch, segments]);
 
-  const src = clip ? archiveVideoUrl(archiveUrlTemplate, camera.id, clip, replay.archiveOffsetSeconds) : null;
+  const src = clip ? archiveVideoUrl(archive.urlTemplate, camera.id, clip, archive.offsetSeconds) : null;
   const displayState: FeedDisplayState = !src ? (segments === undefined ? "starting" : "no-recording") : clock.speed === 0 ? "paused" : "replay";
 
   useEffect(() => onDisplayState?.(displayState), [displayState, onDisplayState]);
@@ -175,6 +160,11 @@ function ArchiveFeed({ camera, clock, replay, archiveUrlTemplate, onDisplayState
     const video = videoRef.current;
     if (!video || !clip || !Number.isFinite(clockMs) || video.seeking || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
     const targetTime = (clockMs - clip.startMs) / 1_000;
+    // A clip led past start-up latency waits on its first frame until the clock reaches it.
+    if (targetTime < 0) {
+      video.pause();
+      return;
+    }
     if (shouldCorrectVideoDrift(video.currentTime, targetTime)) {
       if (isVideoTimeSeekable(video, targetTime)) {
         video.currentTime = targetTime;
@@ -199,6 +189,16 @@ function ArchiveFeed({ camera, clock, replay, archiveUrlTemplate, onDisplayState
     // Muted autoplay can be gated while metadata loads; the next clock sample retries.
     void video.play().catch(() => undefined);
   }, [clip, clock.speed, clockMs, segments]);
+
+  // A detached <video> keeps its progressive download (and one of six HTTP/1.1 connections) until collected.
+  useEffect(() => {
+    const video = videoRef.current;
+    return () => {
+      if (!video) return;
+      video.removeAttribute("src");
+      video.load();
+    };
+  }, [src]);
 
   return (
     <>

@@ -4,10 +4,9 @@ import { useState } from "react";
 import { Layers, X } from "lucide-react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
-import type { CameraFeedState, CameraFeeds } from "@/app/lib/live-world/camera-feeds";
-import type { WorldClock, WorldReplayCapabilities } from "@/app/lib/live-world/types";
 import { cn } from "@/app/lib/utils";
-import { CameraFeed } from "./CameraFeed";
+import { CameraFeed, type ArchiveClock } from "./CameraFeed";
+import type { ArchiveAccess } from "./replay-config";
 import type { CameraFrame } from "./camera-view";
 
 interface CameraViewOverlayProps {
@@ -15,10 +14,8 @@ interface CameraViewOverlayProps {
   camera: PoleCamera;
   rigLabel: string;
   onExit: () => void;
-  feeds: CameraFeeds | null;
-  feedState: CameraFeedState;
-  clock: WorldClock | null;
-  replay: WorldReplayCapabilities | null;
+  clock: ArchiveClock | null;
+  archive: ArchiveAccess | null;
 }
 
 const FEED_OPACITIES = [0, 0.5, 1] as const;

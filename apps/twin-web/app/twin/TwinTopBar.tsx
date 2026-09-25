@@ -5,8 +5,8 @@ import { House } from "lucide-react";
 
 import { useTopBarSlotContext } from "@/app/components/TopBarSlot";
 
-/** Single app bar: brand, twin time, then editor and drive actions. */
-export function TwinTopBar({ timeBar }: { timeBar: ReactNode }) {
+/** Single app bar: brand, phase readout, then editor and drive actions. */
+export function TwinTopBar({ center }: { center: ReactNode }) {
   const slots = useTopBarSlotContext();
   const homeUrl = process.env.NEXT_PUBLIC_TWIN_HOME_URL?.trim() || null;
   return (
@@ -15,7 +15,7 @@ export function TwinTopBar({ timeBar }: { timeBar: ReactNode }) {
         <span aria-hidden="true" className="grid size-6 place-items-center bg-primary text-[10px] font-bold text-primary-foreground">V2X</span>
         <span className="hidden text-sm font-semibold tracking-tight text-foreground lg:inline">Digital Twin</span>
       </div>
-      <div className="flex min-w-0 max-w-[760px] flex-1 items-center">{timeBar}</div>
+      <div className="flex min-w-0 max-w-[760px] flex-1 items-center">{center}</div>
       <div ref={slots?.registerActionsSlot} className="flex min-w-0 items-center gap-2" />
       <div ref={slots?.registerTrailingSlot} className="ml-auto flex shrink-0 items-center gap-2" />
       {homeUrl ? (

@@ -1,9 +1,10 @@
 'use client';
 
-import type { SimScenarioInput } from '@simforge-oss/engine';
+import { parseSimScenarioInput, type SimScenarioInput } from '@simforge-oss/engine';
 import type { EditorDocument, ScenarioMapEntry } from '@simforge-oss/editor';
 import { TruthStreamClient } from '@simforge-oss/training-env/browser';
 
+import type { RecordedActorInput, RecordedInteractionInput } from '../recorded/recorded-tracks';
 import { playbackMapEntry } from '../scenario/maps';
 import { ScenarioWorkerClient } from '../scenario/playback/scenarioWorkerClient';
 import { previewAmbientTrafficProfile } from '../../dashboard/scenario/scene/previewPolicy';
@@ -41,10 +42,22 @@ export interface AuthoredWorldSource extends WorldSource {
 
 const AUTHORED_WORKER_READY_TIMEOUT_MS = 45_000;
 
+export interface RecordedLayer {
+  readonly actors: readonly RecordedActorInput[];
+  readonly interactions: readonly RecordedInteractionInput[];
+}
+
+/**
+ * Compile the editor document and simulate it in a worker. `recorded` actors
+ * (real-world tracks) join the same engine input, and `clipSeconds` sets the
+ * simulated window.
+ */
 export async function createAuthoredWorldSource(opts: {
   document: EditorDocument;
   map: ScenarioMapEntry;
   tickHz?: number;
+  recorded?: RecordedLayer;
+  clipSeconds?: number;
 }): Promise<AuthoredWorldSource> {
   const compiler = new ScenarioWorkerClient();
   let input: SimScenarioInput;
@@ -59,6 +72,14 @@ export async function createAuthoredWorldSource(opts: {
     input = bundle.instance.input;
   } finally {
     compiler.dispose();
+  }
+  if (opts.recorded || opts.clipSeconds !== undefined) {
+    input = parseSimScenarioInput({
+      ...input,
+      ...(opts.clipSeconds !== undefined ? { clipSeconds: opts.clipSeconds } : {}),
+      actors: [...input.actors, ...(opts.recorded?.actors ?? [])],
+      interactions: [...input.interactions, ...(opts.recorded?.interactions ?? [])],
+    });
   }
   return new AuthoredWorkerWorldSource(input, opts.document, opts.map, opts.tickHz ?? 20);
 }
