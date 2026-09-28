@@ -1,17 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeft, ChevronRight, Clapperboard, Pause, Play, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bike, CarFront, Clapperboard, Pause, PersonStanding, Play, Truck, X, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/app/lib/utils";
 import {
   clampSelection,
   clampView,
-  fitLatest,
   formatClock,
   formatSelection,
-  formatViewRange,
-  HOUR_MS,
   MINUTE_MS,
   moveSelection,
   msToX,
@@ -23,7 +20,7 @@ import {
   zoomAround,
   type TimeRange,
 } from "./camera-timeline";
-import { describeEvent, EVENT_KINDS, EVENT_STYLE, packEventLanes, parseDetectionEvents, type DetectionEvent, type EventKind } from "./detection-events";
+import { describeEvent, EVENT_KINDS, EVENT_STYLE, parseDetectionEvents, type DetectionEvent, type EventKind } from "./detection-events";
 import { archiveListUrl, parseArchiveSegments } from "./replay-helpers";
 
 export type TimeSelection = TimeRange;
@@ -58,19 +55,19 @@ type Drag =
 
 type SelectionHit = "start" | "end" | "body" | null;
 
-const PAGE_MS = 12 * HOUR_MS;
 const WHEEL_ZOOM_BASE = 1.2;
 const WHEEL_NOTCH_PX = 100;
-const BUTTON_ZOOM_FACTOR = 2;
 const DRAG_THRESHOLD_PX = 3;
 const EDGE_HIT_PX = 6;
 const EVENTS_DEBOUNCE_MS = 150;
 const ARCHIVE_DEBOUNCE_MS = 300;
 /** Events are fetched for the view plus this share of its span on each side, so panning shows them at once. */
 const EVENTS_PAD_FRACTION = 0.25;
-const MIN_EVENT_PX = 4;
-const EVENT_GAP_PX = 2;
-const MAX_LANES = 3;
+const MIN_EVENT_PX = 10;
+/** Widths from which a block shows its icon, then its object count. */
+const ICON_MIN_PX = 20;
+const COUNT_MIN_PX = 44;
+const EVENT_ICONS: Readonly<Record<EventKind, LucideIcon>> = { pedestrian: PersonStanding, cyclist: Bike, vehicle: CarFront, large_vehicle: Truck };
 const NO_RECORDING_BACKGROUND =
   "repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.22) 0 1px, transparent 1px 6px), hsl(var(--background) / 0.45)";
 
@@ -96,7 +93,7 @@ export function EventTimeline({
   className,
 }: EventTimelineProps): JSX.Element {
   const bounds = useMemo<TimeRange>(() => ({ startMs: Math.min(earliestMs, nowMs), endMs: nowMs }), [earliestMs, nowMs]);
-  const [view, setView] = useState<TimeRange>(() => initialView(bounds, playheadMs));
+  const [view, setView] = useState<TimeRange>(bounds);
   const [width, setWidth] = useState(0);
   const [loaded, setLoaded] = useState<{ range: TimeRange; events: DetectionEvent[] } | null>(null);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -225,13 +222,13 @@ export function EventTimeline({
     };
   }, [archiveEndMs, archiveListUrlTemplate, archiveOffsetSeconds, archiveStartMs, cameraKey]);
 
+  // One row: longer events underneath, so shorter ones drawn over them stay clickable.
   const visibleEvents = useMemo(
-    () => (loaded?.events ?? []).filter((event) => event.endMs >= view.startMs && event.startMs <= view.endMs),
+    () => (loaded?.events ?? [])
+      .filter((event) => event.endMs >= view.startMs && event.startMs <= view.endMs)
+      .sort((a, b) => b.endMs - b.startMs - (a.endMs - a.startMs) || a.startMs - b.startMs),
     [loaded, view.endMs, view.startMs],
   );
-  const msPerPx = width > 0 ? span / width : 0;
-  const lanes = useMemo(() => packEventLanes(visibleEvents, (MIN_EVENT_PX + EVENT_GAP_PX) * msPerPx), [msPerPx, visibleEvents]);
-  const laneCount = Math.min(MAX_LANES, Math.max(1, ...[...lanes.values()].map((lane) => lane + 1)));
   const counts = useMemo(() => {
     const byKind = new Map<EventKind, number>();
     for (const event of visibleEvents) byKind.set(event.kind, (byKind.get(event.kind) ?? 0) + 1);
@@ -334,13 +331,7 @@ export function EventTimeline({
     }
   };
 
-  const zoomButton = (factor: number) => {
-    const anchor = playheadMs >= view.startMs && playheadMs <= view.endMs ? playheadMs : view.startMs + span / 2;
-    setView(zoomAround(view, anchor, factor, bounds));
-  };
-
   const iconButton = "flex size-7 shrink-0 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-40";
-  const laneHeight = 100 / laneCount;
 
   return (
     <div
@@ -376,19 +367,11 @@ export function EventTimeline({
           ) : (
             <span className="hidden text-muted-foreground lg:inline">Click an event, or drag to select up to {Math.round(maxSelectionMs / SECOND_MS)} s</span>
           )}
-          <span className="ml-2 hidden truncate tabular-nums text-muted-foreground/80 xl:inline" data-testid="timeline-view-range">{formatViewRange(view)}</span>
-          <button type="button" className={iconButton} onClick={() => setView(pan(view, -PAGE_MS, bounds))} disabled={view.startMs <= bounds.startMs} aria-label="Back 12 hours" title="Back 12 hours">
-            <ChevronLeft aria-hidden="true" className="size-4" />
-          </button>
-          <button type="button" className={iconButton} onClick={() => setView(pan(view, PAGE_MS, bounds))} disabled={view.endMs >= bounds.endMs} aria-label="Forward 12 hours" title="Forward 12 hours">
-            <ChevronRight aria-hidden="true" className="size-4" />
-          </button>
-          <button type="button" className={iconButton} onClick={() => zoomButton(BUTTON_ZOOM_FACTOR)} aria-label="Zoom out" title="Zoom out (wheel)">
-            <ZoomOut aria-hidden="true" className="size-4" />
-          </button>
-          <button type="button" className={iconButton} onClick={() => zoomButton(1 / BUTTON_ZOOM_FACTOR)} aria-label="Zoom in" title="Zoom in (wheel)">
-            <ZoomIn aria-hidden="true" className="size-4" />
-          </button>
+          {span < bounds.endMs - bounds.startMs ? (
+            <button type="button" className="h-7 px-2 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setView(bounds)} title="Show the whole hour">
+              Whole hour
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onSimulate}
@@ -423,7 +406,7 @@ export function EventTimeline({
         </div>
 
         <div
-          className="relative h-9 border border-border bg-background/60"
+          className="relative h-16 border border-border bg-background/60"
           style={{ cursor: hoverCursor }}
           onPointerDown={onBarPointerDown}
           onPointerMove={onPointerMove}
@@ -446,27 +429,26 @@ export function EventTimeline({
             );
           })}
           {visibleEvents.map((event) => {
-            const lane = Math.min(MAX_LANES - 1, lanes.get(event.id) ?? 0);
             const left = msToX(event.startMs, view, width);
             const eventWidth = Math.max(MIN_EVENT_PX, msToX(event.endMs, view, width) - left);
             const focused = event.id === focusedEventId;
+            const Icon = EVENT_ICONS[event.kind];
             return (
               <div
                 key={event.id}
-                className={cn("absolute rounded-[2px] transition-[filter] hover:brightness-125", focused && "ring-2 ring-white")}
-                style={{
-                  left,
-                  width: eventWidth,
-                  top: `calc(${lane * laneHeight}% + 3px)`,
-                  height: `calc(${laneHeight}% - 6px)`,
-                  background: EVENT_STYLE[event.kind].color,
-                  opacity: focused ? 1 : 0.85,
-                }}
+                className={cn(
+                  "absolute inset-y-1.5 flex items-center justify-center gap-1 overflow-hidden rounded-md text-[11px] font-semibold text-black/80 shadow-[0_0_0_1px_hsl(var(--background))] transition-[filter] hover:brightness-125",
+                  focused && "z-10 ring-2 ring-white",
+                )}
+                style={{ left, width: eventWidth, background: EVENT_STYLE[event.kind].color, opacity: focused ? 1 : 0.9 }}
                 title={`${EVENT_STYLE[event.kind].label} · ${formatClock(event.startMs)}–${formatClock(event.endMs)} · ${describeEvent(event)}`}
                 data-event-id={event.id}
                 data-event-kind={event.kind}
                 data-testid="timeline-event"
-              />
+              >
+                {eventWidth >= ICON_MIN_PX ? <Icon aria-hidden="true" className="pointer-events-none size-4 shrink-0" /> : null}
+                {eventWidth >= COUNT_MIN_PX && event.objects > 1 ? <span className="pointer-events-none tabular-nums">{event.objects}</span> : null}
+              </div>
             );
           })}
           {visibleEvents.length === 0 && loaded ? (
@@ -491,11 +473,4 @@ export function EventTimeline({
       </div>
     </div>
   );
-}
-
-/** The last 12 hours, or 12 hours centred on a preset playhead that falls outside them. */
-function initialView(bounds: TimeRange, playheadMs: number): TimeRange {
-  const latest = fitLatest(bounds);
-  if (playheadMs >= latest.startMs && playheadMs <= latest.endMs) return latest;
-  return clampView({ startMs: playheadMs - PAGE_MS / 2, endMs: playheadMs + PAGE_MS / 2 }, bounds);
 }

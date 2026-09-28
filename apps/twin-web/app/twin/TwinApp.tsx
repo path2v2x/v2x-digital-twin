@@ -38,7 +38,7 @@ import type { ArchiveClock } from "./CameraFeed";
 import { CameraStrip, type StripCamera } from "./CameraStrip";
 import { CameraViewOverlay } from "./CameraViewOverlay";
 import { eventWindow, type DetectionEvent } from "./detection-events";
-import { EventCameraPanel } from "./EventCameraPanel";
+import { CameraPane, useSplitLayout } from "./EventCameraPanel";
 import { EventTimeline, type TimeSelection } from "./EventTimeline";
 import { actorSpeedKph, formatClipTime } from "./drive-telemetry";
 import { usePoleCameras } from "./pole-cameras";
@@ -53,6 +53,11 @@ const MAX_WINDOW_MS = 60_000;
 const MIN_WINDOW_MS = 2_000;
 /** Camera tiles follow the scrubbed playhead once it settles. */
 const PLAYHEAD_SETTLE_MS = 300;
+/** The timeline covers the past hour. */
+const TIMELINE_SPAN_MS = 60 * 60_000;
+/** Height kept clear of the timeline overlay by the split review panes. */
+const TIMELINE_RESERVE_PX = 150;
+const FULL_BLEED = { left: 0, top: 0, right: 0, bottom: 0 } as const;
 /** Footage review advances the playhead at this interval. */
 const PREVIEW_TICK_MS = 100;
 
@@ -111,7 +116,7 @@ export function TwinApp() {
 
 function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   const replay = useReplayConfig();
-  const nowMs = useNow(30_000);
+  const nowMs = useNow(10_000);
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [playheadMs, setPlayheadMs] = useState(initialPlayheadMs);
   const [selection, setSelection] = useState<TimeSelection | null>(null);
@@ -301,17 +306,6 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     lookThrough.release(true);
   }, [lookThrough]);
 
-  useEffect(() => {
-    if ((!lookThrough.activeKey && !focus) || !editorIdle) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || isEditableTarget(event.target)) return;
-      if (focus) closeFocus();
-      else lookThrough.release(true);
-    };
-    // The editor controller consumes Escape in a window capture listener; share its phase.
-    window.addEventListener("keydown", onKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [closeFocus, editorIdle, focus, lookThrough]);
 
   useEffect(() => {
     if (!driving || !authoredSource || !egoActorId) return;
@@ -410,10 +404,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     setPhase({ kind: "pick" });
   }, [controller, driving, exitDrive, window_]);
 
-  const timelineBounds = useMemo<TimeSelection>(
-    () => ({ startMs: nowMs - (replay.config?.retentionHours ?? 72) * 3_600_000, endMs: nowMs }),
-    [nowMs, replay.config?.retentionHours],
-  );
+  const timelineBounds = useMemo<TimeSelection>(() => ({ startMs: nowMs - TIMELINE_SPAN_MS, endMs: nowMs }), [nowMs]);
 
   // An event click reviews it: its window is selected for Simulate and its busiest camera opens beside the twin.
   const selectEvent = useCallback((event: DetectionEvent, clickMs: number) => {
@@ -433,7 +424,34 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     if (camera.alignable) lookThrough.engage(camera.key);
   }, [lookThrough, stripCameras]);
 
+  useEffect(() => {
+    if ((!lookThrough.activeKey && !focus) || !editorIdle) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isEditableTarget(event.target)) return;
+      const cameraIndex = focus && /^[1-9]$/.test(event.key) ? Number(event.key) - 1 : -1;
+      const camera = cameraIndex >= 0 ? stripCameras[cameraIndex] : undefined;
+      if (camera) {
+        event.preventDefault();
+        focusCamera(camera.camera.id);
+        return;
+      }
+      if (event.key !== "Escape") return;
+      if (focus) closeFocus();
+      else lookThrough.release(true);
+    };
+    // The editor controller consumes Escape in a window capture listener; share its phase.
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [closeFocus, editorIdle, focus, focusCamera, lookThrough, stripCameras]);
+
   const focusedCamera = focus && !editing ? stripCameras.find((entry) => entry.camera.id === focus.cameraId) ?? null : null;
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const split = useSplitLayout(
+    splitRef,
+    focusedCamera !== null,
+    focusedCamera ? focusedCamera.camera.intrinsics.width / focusedCamera.camera.intrinsics.height : 4 / 3,
+    TIMELINE_RESERVE_PX,
+  );
 
   const scrub = useCallback((ms: number) => {
     setPreviewPlaying(false);
@@ -619,8 +637,9 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                 canvas={(slotProps) => (
                   <div {...slotProps} className={cn(slotProps.className, "relative bg-background")} data-split={focusedCamera ? "" : undefined}>
                     {/* The shell stretches every direct canvas child; the split lives inside one. */}
-                    <div className="relative">
-                    <div ref={hostRef} className={cn("absolute inset-y-0 left-0", focusedCamera ? "right-1/2" : "right-0")} data-testid="twin-view">
+                    <div ref={splitRef} className="relative">
+                    {/* Split review: twin and footage as two equal panes at the camera's aspect; the viewer never remounts. */}
+                    <div ref={hostRef} className="absolute" style={split?.twin ?? FULL_BLEED} data-testid="twin-view">
                       <CityView
                         key={quality}
                         manifestUrl={map.browserManifestUrl}
@@ -641,7 +660,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                         role="application"
                         tabIndex={0}
                       />
-                      {activeCamera && lookThrough.frame ? (
+                      {activeCamera && lookThrough.frame && !split ? (
                         <CameraViewOverlay
                           frame={lookThrough.frame}
                           camera={activeCamera.camera}
@@ -652,21 +671,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                         />
                       ) : null}
                     </div>
-                    {focus && focusedCamera ? (
-                      <div className="absolute inset-y-0 left-1/2 right-0 flex pb-[108px]">
-                        <EventCameraPanel
-                          event={focus.event}
-                          cameras={stripCameras.map((entry) => entry.camera)}
-                          cameraId={focusedCamera.camera.id}
-                          onCameraChange={focusCamera}
-                          clock={cameraClock}
-                          archive={archive}
-                          playing={previewPlaying}
-                          onPlayPause={togglePreview}
-                          onClose={closeFocus}
-                        />
-                      </div>
-                    ) : null}
+                    {focusedCamera && split ? <CameraPane camera={focusedCamera.camera} clock={cameraClock} archive={archive} style={split.camera} /> : null}
                     </div>
                   </div>
                 )}
@@ -853,12 +858,12 @@ function StatusNotices({ viewerError, mapLoaded, replayError, recorded, simulati
   );
 }
 
-/** `?at=<ISO time>` presets the playhead; otherwise five minutes ago. */
+/** `?at=<ISO time>` within the past hour presets the playhead; otherwise five minutes ago. */
 function initialPlayheadMs(): number {
   const fallback = Date.now() - 5 * 60_000;
   if (typeof window === "undefined") return fallback;
   const at = Date.parse(new URLSearchParams(window.location.search).get("at") ?? "");
-  return Number.isFinite(at) && at <= Date.now() ? at : fallback;
+  return Number.isFinite(at) && at <= Date.now() && at >= Date.now() - TIMELINE_SPAN_MS ? at : fallback;
 }
 
 /** Wall clock, refreshed every `intervalMs`. */

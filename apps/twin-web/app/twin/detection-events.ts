@@ -51,22 +51,6 @@ export function parseDetectionEvents(body: unknown): DetectionEvent[] {
 }
 
 /**
- * Lane per event so overlapping events stay visible: greedy first-fit in start
- * order, where events closer than `minGapMs` count as overlapping.
- */
-export function packEventLanes(events: readonly DetectionEvent[], minGapMs: number): Map<string, number> {
-  const laneEnds: number[] = [];
-  const lanes = new Map<string, number>();
-  for (const event of [...events].sort((a, b) => a.startMs - b.startMs || a.endMs - b.endMs)) {
-    let lane = laneEnds.findIndex((endMs) => event.startMs > endMs + minGapMs);
-    if (lane < 0) lane = laneEnds.length;
-    laneEnds[lane] = Math.max(event.endMs, laneEnds[lane] ?? Number.NEGATIVE_INFINITY);
-    lanes.set(event.id, lane);
-  }
-  return lanes;
-}
-
-/**
  * The simulation window for a clicked event: the whole event plus padding when
  * it fits in `maxMs`, otherwise `maxMs` centred on the click and kept inside the
  * padded event. Always inside `bounds`.
