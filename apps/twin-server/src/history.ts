@@ -18,17 +18,10 @@ export interface HistoryRange {
   readonly next: string | null;
 }
 
-export interface CameraCoverage {
-  readonly detections: number;
-  readonly objects: number;
-}
-
 export interface CoverageBucket {
   readonly start: string;
   readonly detections: number;
   readonly objects: number;
-  /** Present when requested per camera. */
-  readonly cameras?: Readonly<Record<string, CameraCoverage>>;
 }
 
 export interface ObjectSummary {
@@ -42,6 +35,40 @@ export interface ObjectSummary {
   readonly last_lat: number;
   readonly last_lon: number;
 }
+
+export type EventKind = 'pedestrian' | 'cyclist' | 'vehicle' | 'large_vehicle';
+
+/** Same-kind tracks, merged across cameras while they follow each other within `EVENT_MERGE_GAP_MS`. */
+export interface DetectionEvent {
+  readonly id: string;
+  readonly kind: EventKind;
+  readonly start: string;
+  readonly end: string;
+  readonly objects: number;
+  readonly detections: number;
+  /** Cameras by detections, most first. */
+  readonly cameras: readonly { readonly camera: string; readonly detections: number }[];
+}
+
+/** A track needs this much evidence to count as an event (the web replay applies the same floor). */
+export const EVENT_MIN_DETECTIONS = 5;
+export const EVENT_MIN_SPAN_MS = 1_000;
+/** Vehicles that move less than this are parked, not events. */
+export const PARKED_MAX_EXTENT_M = 3;
+export const EVENT_MERGE_GAP_MS = 5_000;
+
+const EVENT_KINDS: Record<string, EventKind> = {
+  person: 'pedestrian',
+  pedestrian: 'pedestrian',
+  bicycle: 'cyclist',
+  motorcycle: 'cyclist',
+  car: 'vehicle',
+  van: 'vehicle',
+  truck: 'large_vehicle',
+  bus: 'large_vehicle',
+};
+
+const METRES_PER_DEGREE = 111_320;
 
 interface DetectionRow {
   ts_ms: number;
@@ -59,10 +86,6 @@ interface CoverageRow {
   objects: number;
 }
 
-interface CameraCoverageRow extends CoverageRow {
-  camera: string;
-}
-
 interface ObjectRow {
   object_id: string;
   object_type: string;
@@ -73,6 +96,19 @@ interface ObjectRow {
   cameras: string;
   last_lat: number;
   last_lon: number;
+}
+
+interface TrackRow {
+  object_id: string;
+  object_type: string;
+  camera: string;
+  count: number;
+  first_ms: number;
+  last_ms: number;
+  min_lat: number;
+  max_lat: number;
+  min_lon: number;
+  max_lon: number;
 }
 
 function iso(ms: number): string {
@@ -86,7 +122,7 @@ export class DetectionHistory {
   private readonly insertDetection: StatementSync;
   private readonly selectRange: StatementSync;
   private readonly selectCoverage: StatementSync;
-  private readonly selectCameraCoverage: StatementSync;
+  private readonly selectTracks: StatementSync;
   private readonly selectObjects: StatementSync;
   private readonly deleteDetections: StatementSync;
   private readonly deleteFrames: StatementSync;
@@ -134,15 +170,13 @@ export class DetectionHistory {
       GROUP BY bucket_index
       ORDER BY bucket_index
     `);
-    this.selectCameraCoverage = this.db.prepare(`
-      SELECT CAST((ts_ms - ?) / ? AS INTEGER) AS bucket_index,
-             camera,
-             COUNT(*) AS detections,
-             COUNT(DISTINCT object_id) AS objects
+    this.selectTracks = this.db.prepare(`
+      SELECT object_id, object_type, camera,
+             COUNT(*) AS count, MIN(ts_ms) AS first_ms, MAX(ts_ms) AS last_ms,
+             MIN(lat) AS min_lat, MAX(lat) AS max_lat, MIN(lon) AS min_lon, MAX(lon) AS max_lon
       FROM detections
       WHERE ts_ms >= ? AND ts_ms < ?
-      GROUP BY bucket_index, camera
-      ORDER BY bucket_index, camera
+      GROUP BY object_id, camera
     `);
     this.selectObjects = this.db.prepare(`
       SELECT d.object_id,
@@ -216,14 +250,13 @@ export class DetectionHistory {
     };
   }
 
-  coverage(startMs: number, endMs: number, bucketSec: number, byCamera = false): CoverageBucket[] {
+  coverage(startMs: number, endMs: number, bucketSec: number): CoverageBucket[] {
     const bucketMs = bucketSec * 1000;
     const count = Math.ceil((endMs - startMs) / bucketMs);
     const buckets = Array.from({ length: count }, (_, index) => ({
       start: iso(startMs + index * bucketMs),
       detections: 0,
       objects: 0,
-      ...(byCamera ? { cameras: {} as Record<string, CameraCoverage> } : {}),
     }));
     const rows = this.selectCoverage.all(startMs, bucketMs, startMs, endMs) as unknown as CoverageRow[];
     for (const row of rows) {
@@ -232,14 +265,75 @@ export class DetectionHistory {
       bucket.detections = Number(row.detections);
       bucket.objects = Number(row.objects);
     }
-    if (byCamera) {
-      const cameraRows = this.selectCameraCoverage.all(startMs, bucketMs, startMs, endMs) as unknown as CameraCoverageRow[];
-      for (const row of cameraRows) {
-        const cameras = buckets[row.bucket_index]?.cameras;
-        if (cameras) cameras[row.camera] = { detections: Number(row.detections), objects: Number(row.objects) };
-      }
-    }
     return buckets;
+  }
+
+  /** Moving objects in `[startMs, endMs)`, clustered into per-kind events; parked vehicles and fragments are dropped. */
+  events(startMs: number, endMs: number): DetectionEvent[] {
+    const rows = this.selectTracks.all(startMs, endMs) as unknown as TrackRow[];
+    const tracks = new Map<string, { kind: EventKind; count: number; firstMs: number; lastMs: number; minLat: number; maxLat: number; minLon: number; maxLon: number; cameras: Map<string, number> }>();
+    for (const row of rows) {
+      const count = Number(row.count);
+      const track = tracks.get(row.object_id);
+      if (!track) {
+        tracks.set(row.object_id, {
+          kind: EVENT_KINDS[row.object_type] ?? 'vehicle',
+          count,
+          firstMs: row.first_ms,
+          lastMs: row.last_ms,
+          minLat: row.min_lat,
+          maxLat: row.max_lat,
+          minLon: row.min_lon,
+          maxLon: row.max_lon,
+          cameras: new Map([[row.camera, count]]),
+        });
+        continue;
+      }
+      track.count += count;
+      track.firstMs = Math.min(track.firstMs, row.first_ms);
+      track.lastMs = Math.max(track.lastMs, row.last_ms);
+      track.minLat = Math.min(track.minLat, row.min_lat);
+      track.maxLat = Math.max(track.maxLat, row.max_lat);
+      track.minLon = Math.min(track.minLon, row.min_lon);
+      track.maxLon = Math.max(track.maxLon, row.max_lon);
+      track.cameras.set(row.camera, (track.cameras.get(row.camera) ?? 0) + count);
+    }
+
+    const moving = [...tracks.values()].filter((track) => {
+      if (track.count < EVENT_MIN_DETECTIONS || track.lastMs - track.firstMs < EVENT_MIN_SPAN_MS) return false;
+      if (track.kind === 'pedestrian' || track.kind === 'cyclist') return true;
+      const cosLat = Math.cos(((track.minLat + track.maxLat) / 2) * Math.PI / 180);
+      const extentM = Math.hypot((track.maxLat - track.minLat) * METRES_PER_DEGREE, (track.maxLon - track.minLon) * METRES_PER_DEGREE * cosLat);
+      return extentM >= PARKED_MAX_EXTENT_M;
+    }).sort((a, b) => a.firstMs - b.firstMs || a.lastMs - b.lastMs);
+
+    const events: DetectionEvent[] = [];
+    const open = new Map<EventKind, { kind: EventKind; startMs: number; endMs: number; objects: number; detections: number; cameras: Map<string, number> }>();
+    const close = (event: { kind: EventKind; startMs: number; endMs: number; objects: number; detections: number; cameras: Map<string, number> }) => {
+      events.push({
+        id: `${event.kind}-${event.startMs}`,
+        kind: event.kind,
+        start: iso(event.startMs),
+        end: iso(event.endMs),
+        objects: event.objects,
+        detections: event.detections,
+        cameras: [...event.cameras].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([camera, detections]) => ({ camera, detections })),
+      });
+    };
+    for (const track of moving) {
+      const current = open.get(track.kind);
+      if (current && track.firstMs <= current.endMs + EVENT_MERGE_GAP_MS) {
+        current.endMs = Math.max(current.endMs, track.lastMs);
+        current.objects += 1;
+        current.detections += track.count;
+        for (const [camera, count] of track.cameras) current.cameras.set(camera, (current.cameras.get(camera) ?? 0) + count);
+        continue;
+      }
+      if (current) close(current);
+      open.set(track.kind, { kind: track.kind, startMs: track.firstMs, endMs: track.lastMs, objects: 1, detections: track.count, cameras: new Map(track.cameras) });
+    }
+    for (const event of open.values()) close(event);
+    return events.sort((a, b) => a.start.localeCompare(b.start) || a.kind.localeCompare(b.kind));
   }
 
   objects(startMs: number, endMs: number, limit: number): ObjectSummary[] {

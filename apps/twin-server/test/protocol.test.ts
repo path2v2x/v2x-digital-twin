@@ -402,11 +402,11 @@ describe('HTTP :8090', () => {
     const coverageBody = (await coverage.json()) as Json;
     expect(coverageBody['bucket_seconds']).toBe(60);
     expect(coverageBody['buckets']).toHaveLength(3);
-    const perCamera = await fetch(`http://127.0.0.1:${config.httpPort}/detections/coverage?start=${rangeStart}&end=${rangeEnd}&bucket=1&by=camera`);
-    expect(perCamera.status).toBe(200);
-    const perCameraBuckets = ((await perCamera.json()) as Json)['buckets'] as Json[];
-    expect(perCameraBuckets).toHaveLength(180);
-    expect(perCameraBuckets.every((bucket) => typeof bucket['cameras'] === 'object')).toBe(true);
+    const events = await fetch(`http://127.0.0.1:${config.httpPort}/detections/events?start=${rangeStart}&end=${rangeEnd}`);
+    expect(events.status).toBe(200);
+    expect(Array.isArray(((await events.json()) as Json)['events'])).toBe(true);
+    const tooWide = await fetch(`http://127.0.0.1:${config.httpPort}/detections/events?start=${rangeStart}&end=${encodeURIComponent('2026-04-14T05:28:00Z')}`);
+    expect(tooWide.status).toBe(400);
     const replayConfig = await fetch(`http://127.0.0.1:${config.httpPort}/detections/replay-config`);
     expect(replayConfig.status).toBe(200);
     const replayBody = (await replayConfig.json()) as Json;

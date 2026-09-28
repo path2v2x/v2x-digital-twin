@@ -23,6 +23,8 @@ function requiredEpochMs(url: URL, name: string): number {
 }
 
 const WS_BACKPRESSURE_BYTES = 4 * 1024 * 1024;
+/** The UI asks for at most its 12-hour view plus padding. */
+const MAX_EVENTS_RANGE_MS = 24 * 3_600_000;
 
 export interface TwinServers {
   readonly wsServer: http.Server;
@@ -147,7 +149,8 @@ export function startServers(deps: DriveDeps): TwinServers {
     if (
       url.pathname === '/detections/coverage' ||
       url.pathname === '/detections/history' ||
-      url.pathname === '/detections/objects'
+      url.pathname === '/detections/objects' ||
+      url.pathname === '/detections/events'
     ) {
       if (!sync.history) {
         jsonResponse(res, 503, { error: 'Detection history unavailable' });
@@ -165,12 +168,20 @@ export function startServers(deps: DriveDeps): TwinServers {
           }
           const bucketCount = Math.ceil((endMs - startMs) / (bucketSec * 1000));
           if (bucketCount > 2000) throw new Error('requested range exceeds 2000 buckets');
-          const byCamera = url.searchParams.get('by') === 'camera';
           jsonResponse(res, 200, {
             start: new Date(startMs).toISOString(),
             end: new Date(endMs).toISOString(),
             bucket_seconds: bucketSec,
-            buckets: sync.history.coverage(startMs, endMs, bucketSec, byCamera),
+            buckets: sync.history.coverage(startMs, endMs, bucketSec),
+          });
+          return;
+        }
+        if (url.pathname === '/detections/events') {
+          if (endMs - startMs > MAX_EVENTS_RANGE_MS) throw new Error('events range exceeds 24 hours');
+          jsonResponse(res, 200, {
+            start: new Date(startMs).toISOString(),
+            end: new Date(endMs).toISOString(),
+            events: sync.history.events(startMs, endMs),
           });
           return;
         }

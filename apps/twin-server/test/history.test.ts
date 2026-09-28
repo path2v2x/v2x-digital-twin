@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { DetectionRecord } from '../src/ghosts.js';
 import { DetectionHistory } from '../src/history.js';
 
 let stores: DetectionHistory[] = [];
@@ -52,16 +53,53 @@ describe('DetectionHistory', () => {
     ]);
   });
 
-  it('splits bucket counts per camera when asked', () => {
+  it('clusters moving tracks into per-kind events and drops fragments and parked vehicles', () => {
     const store = history();
-    const baseMs = 1_756_000_000_000;
-    store.recordSummary('ch1', baseMs / 1000 + 0.5, [detection('a'), detection('b')]);
-    store.recordSummary('ch2', baseMs / 1000 + 0.7, [detection('a')]);
-    store.recordSummary('ch2', baseMs / 1000 + 1.2, [detection('c')]);
+    const baseSec = 1_756_000_000;
+    const frame = (camera: string, t: number, detections: DetectionRecord[]) =>
+      store.recordSummary(camera, baseSec + t, detections);
+    const walker = (id: string, step: number) => ({ ...detection(id, 37.9156 + step * 1e-5), object_type: 'person' });
+    const driving = (id: string, step: number) => detection(id, 37.9156 + step * 1e-4);
+    for (let i = 0; i < 6; i += 1) {
+      // One pedestrian seen by ch3, then picked up by ch4 within the merge gap.
+      frame('ch3', i, [walker('ch3_1', i), driving('ch3_car', i), detection('ch3_parked')]);
+      frame('ch4', 9 + i, [walker('ch4_7', i)]);
+      // A second pedestrian after a gap longer than the merge gap.
+      frame('ch4', 30 + i, [walker('ch4_8', i)]);
+    }
+    // A two-detection fragment never becomes an event.
+    frame('ch1', 50, [walker('ch1_noise', 0)]);
+    frame('ch1', 51, [walker('ch1_noise', 1)]);
 
-    expect(store.coverage(baseMs, baseMs + 2_000, 1, true)).toEqual([
-      { start: new Date(baseMs).toISOString(), detections: 3, objects: 2, cameras: { ch1: { detections: 2, objects: 2 }, ch2: { detections: 1, objects: 1 } } },
-      { start: new Date(baseMs + 1_000).toISOString(), detections: 1, objects: 1, cameras: { ch2: { detections: 1, objects: 1 } } },
+    const iso = (t: number) => new Date((baseSec + t) * 1000).toISOString();
+    expect(store.events(baseSec * 1000, (baseSec + 60) * 1000)).toEqual([
+      {
+        id: `pedestrian-${baseSec * 1000}`,
+        kind: 'pedestrian',
+        start: iso(0),
+        end: iso(14),
+        objects: 2,
+        detections: 12,
+        cameras: [{ camera: 'ch3', detections: 6 }, { camera: 'ch4', detections: 6 }],
+      },
+      {
+        id: `vehicle-${baseSec * 1000}`,
+        kind: 'vehicle',
+        start: iso(0),
+        end: iso(5),
+        objects: 1,
+        detections: 6,
+        cameras: [{ camera: 'ch3', detections: 6 }],
+      },
+      {
+        id: `pedestrian-${(baseSec + 30) * 1000}`,
+        kind: 'pedestrian',
+        start: iso(30),
+        end: iso(35),
+        objects: 1,
+        detections: 6,
+        cameras: [{ camera: 'ch4', detections: 6 }],
+      },
     ]);
   });
 
