@@ -7,7 +7,7 @@ Digital twin for the Richmond Field Station V2X deployment. The twin server owns
 | Component | Responsibility | Default interface |
 |---|---|---|
 | `apps/twin-server` | Shared simulation world, drive commands, truth publication, 72-hour detection history/replay, local detection mirroring, camera relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/`, `/detections/` |
-| `apps/twin-web` | Operator UI (Next.js), two views. Pick: per-camera timeline of detection density and recording gaps (zoom 20 s–12 h, ±12 h paging, click to scrub, drag to select ≤60 s), camera strip and look-through following the playhead. Edit: scenario editor over the selected window, recorded actors replayed by an in-browser simulation alongside user-placed actors, archive footage in sync with play/stop | HTTP `:5199` |
+| `apps/twin-web` | Operator UI (Next.js), two views. Pick: one timeline bar of detected events across all cameras, colour-coded by kind (pedestrian, cyclist, car, truck/bus), with recording gaps hatched (zoom 20 s–12 h, ±12 h paging, click to scrub, drag to select ≤60 s). Clicking an event selects its window and splits the viewport into the twin (looking through the event's camera, recorded actors sampled at the playhead) and that camera's footage, played back in sync. Edit: scenario editor over the selected window, recorded actors replayed by an in-browser simulation alongside user-placed actors, archive footage in sync with play/stop | HTTP `:5199` |
 | `apps/dev-console` | Low-level `/drive` protocol console | Vite development server |
 
 `path2v2x/co-perception` is the only perception implementation. It is a separate repository and process.
@@ -46,7 +46,7 @@ pnpm --dir apps/twin-server typecheck
 make help
 ```
 
-`apps/twin-web/.env.development` sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/map-bundles/`, `/catalog/`, `/drive-rigs/`, `/detections/` and `/archive/` to that host; in development, absolute archive URLs advertised by the host are rewritten to those same-origin paths. The UI talks to the twin only over HTTP (`/detections/replay-config`, `/detections/coverage`, `/detections/history`, `/archive/`); `?at=<ISO>` presets the playhead.
+`apps/twin-web/.env.development` sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/map-bundles/`, `/catalog/`, `/drive-rigs/`, `/detections/` and `/archive/` to that host; in development, absolute archive URLs advertised by the host are rewritten to those same-origin paths. The UI talks to the twin only over HTTP (`/detections/replay-config`, `/detections/events`, `/detections/history`, `/archive/`); `?at=<ISO>` presets the playhead.
 
 ### Web UI configuration
 

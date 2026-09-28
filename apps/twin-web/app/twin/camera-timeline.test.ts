@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  chooseBucketSeconds,
   clampSelection,
-  coverageWindow,
-  densityAlpha,
   formatSelection,
   HOUR_MS,
   MAX_VIEW_SPAN_MS,
@@ -61,40 +58,6 @@ describe('timeline view', () => {
     expect(pan(nearStart, -12 * HOUR_MS, bounds)).toEqual({ startMs: bounds.startMs, endMs: bounds.startMs + 12 * HOUR_MS });
     const latest = { startMs: now - 12 * HOUR_MS, endMs: now };
     expect(pan(latest, 12 * HOUR_MS, bounds)).toEqual(latest);
-  });
-});
-
-describe('coverage buckets', () => {
-  it('picks nice buckets at least 2 px wide and at least 1 s', () => {
-    expect(chooseBucketSeconds(12 * HOUR_MS, 1_200)).toBe(120);
-    expect(chooseBucketSeconds(20_000, 1_200)).toBe(1);
-    expect(chooseBucketSeconds(10 * 60_000, 1_200)).toBe(1);
-    expect(chooseBucketSeconds(60 * 60_000, 1_200)).toBe(10);
-    for (const [span, width] of [[12 * HOUR_MS, 1_600], [3 * HOUR_MS, 900], [5 * 60_000, 2_560]] as const) {
-      const bucket = chooseBucketSeconds(span, width);
-      expect(Number.isInteger(bucket)).toBe(true);
-      expect(width * bucket * 1_000 / span).toBeGreaterThanOrEqual(2);
-    }
-  });
-
-  it('never asks for more than 2000 aligned buckets, even on very wide strips', () => {
-    for (const span of [12 * HOUR_MS, 11 * HOUR_MS + 1_234, 40 * 60_000 + 7]) {
-      const bucket = chooseBucketSeconds(span, 100_000);
-      const window = coverageWindow({ startMs: now - span + 321, endMs: now + 321 }, bucket);
-      expect((window.endMs - window.startMs) / (bucket * 1_000)).toBeLessThanOrEqual(2_000);
-    }
-  });
-
-  it('aligns the request window outward to whole buckets', () => {
-    expect(coverageWindow({ startMs: at('2026-09-24T23:08:07.5Z'), endMs: at('2026-09-24T23:09:01Z') }, 10))
-      .toEqual({ startMs: at('2026-09-24T23:08:00Z'), endMs: at('2026-09-24T23:09:10Z') });
-  });
-
-  it('shades density on a log scale with empty buckets transparent', () => {
-    expect(densityAlpha(0, 500)).toBe(0);
-    expect(densityAlpha(500, 500)).toBeCloseTo(1);
-    expect(densityAlpha(1, 500)).toBeGreaterThan(0.15);
-    expect(densityAlpha(22, 500)).toBeGreaterThan(0.5);
   });
 });
 

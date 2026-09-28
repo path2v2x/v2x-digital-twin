@@ -43,7 +43,7 @@ const EARLY_EXIT_MARGIN_S = 0.5;
 const HEADING_MIN_DISPLACEMENT_M = 0.3;
 const ACTOR_ID_INVALID = /[^A-Za-z0-9._:@/-]/g;
 // Recorded-vs-recorded contact crash-disables replay: 0.3 m peds, ≥0.45 m (0.3·√2) separation, and exit at the last sample (engine release motion collided) → zero contacts on the fixture.
-const RECORDED_PEDESTRIAN_DIMS = { l: 0.3, w: 0.3, h: 1.75 };
+export const RECORDED_PEDESTRIAN_DIMS = { l: 0.3, w: 0.3, h: 1.75 };
 const MIN_PEDESTRIAN_SEPARATION_M = 0.45;
 
 const KIND_BY_OBJECT_TYPE: Readonly<Record<string, ActorKind>> = {

@@ -30,16 +30,19 @@ import { createAuthoredWorldSource, type AuthoredWorldSource, type RecordedLayer
 import { createTruthViewerBridge, type TruthViewerBridge } from "@/app/lib/live-world/truth-viewer-bridge";
 import type { WorldSource } from "@/app/lib/live-world/types";
 import { useWorldSource } from "@/app/lib/live-world/use-world-source";
+import { preparePreviewTracks, recordedPreviewFrame, type PreviewTrack } from "@/app/lib/recorded/recorded-preview";
 import { buildRecordedTracks, fetchWindowDetections, recordedScenarioParts, sceneFrameFromProj } from "@/app/lib/recorded/recorded-tracks";
 import type { ScenarioAuthoringQuality } from "@/app/lib/scenario/contracts";
 import { useEditorRuntime } from "@/app/lib/scenario/editor/use-editor-runtime";
 import type { ArchiveClock } from "./CameraFeed";
 import { CameraStrip, type StripCamera } from "./CameraStrip";
-import { CameraTimeline, type TimeSelection } from "./CameraTimeline";
 import { CameraViewOverlay } from "./CameraViewOverlay";
+import { eventWindow, type DetectionEvent } from "./detection-events";
+import { EventCameraPanel } from "./EventCameraPanel";
+import { EventTimeline, type TimeSelection } from "./EventTimeline";
 import { actorSpeedKph, formatClipTime } from "./drive-telemetry";
 import { usePoleCameras } from "./pole-cameras";
-import { DETECTION_COVERAGE_URL, DETECTION_HISTORY_URL, useReplayConfig, type ReplayConfig } from "./replay-config";
+import { DETECTION_EVENTS_URL, DETECTION_HISTORY_URL, useReplayConfig, type ReplayConfig } from "./replay-config";
 import { TwinTopBar } from "./TwinTopBar";
 import { useCameraLookThrough, type LookThroughTarget } from "./use-camera-look-through";
 
@@ -50,6 +53,8 @@ const MAX_WINDOW_MS = 60_000;
 const MIN_WINDOW_MS = 2_000;
 /** Camera tiles follow the scrubbed playhead once it settles. */
 const PLAYHEAD_SETTLE_MS = 300;
+/** Footage review advances the playhead at this interval. */
+const PREVIEW_TICK_MS = 100;
 
 type Phase = { kind: "pick" } | { kind: "edit"; window: TimeSelection };
 
@@ -110,7 +115,11 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   const [phase, setPhase] = useState<Phase>({ kind: "pick" });
   const [playheadMs, setPlayheadMs] = useState(initialPlayheadMs);
   const [selection, setSelection] = useState<TimeSelection | null>(null);
-  const settledPlayheadMs = useSettled(playheadMs, PLAYHEAD_SETTLE_MS);
+  const [focus, setFocus] = useState<{ event: DetectionEvent; cameraId: string } | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [preview, setPreview] = useState<{ window: TimeSelection; tracks: PreviewTrack[] } | null>(null);
+  // Playback moves the playhead continuously; only user scrubs wait for it to settle.
+  const settledPlayheadMs = useSettled(playheadMs, PLAYHEAD_SETTLE_MS, previewPlaying);
   const [recorded, setRecorded] = useState<RecordedState>({ status: "loading" });
   const [authoredSource, setAuthoredSource] = useState<AuthoredWorldSource | null>(null);
   const [authoredCreationError, setAuthoredCreationError] = useState<string | null>(null);
@@ -235,13 +244,22 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     if (!bridge) return;
     bridge.setFollow(driving && !transport?.completed ? egoActorId : null, followMode);
   }, [bridge, driving, egoActorId, followMode, transport, transportRevision]);
-  useEffect(() => () => bridge?.dispose(), [bridge]);
+
+  // One bridge per phase: recorded previews while picking, the simulation while editing; a new phase starts empty.
+  useEffect(() => {
+    if (!viewer) return;
+    const next = createTruthViewerBridge(viewer, { layer: editing ? "drive-live" : "recorded-preview", groundLift: true });
+    setBridge(next);
+    return () => {
+      setBridge(null);
+      next.dispose();
+    };
+  }, [editing, viewer]);
 
   useDriveControls(authoredSource, driving ? egoActorId : null);
 
   const onViewerReady = useCallback((readyViewer: CityViewer) => {
     setViewer(readyViewer);
-    setBridge(createTruthViewerBridge(readyViewer, { layer: "drive-live", groundLift: true }));
     setViewerError(null);
   }, []);
 
@@ -258,10 +276,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
       }),
     [poleCameras.features, poleCameras.rigs],
   );
-  const timelineCameras = useMemo(
-    () => stripCameras.map(({ camera }) => ({ id: camera.id, label: camera.id.toUpperCase() })),
-    [stripCameras],
-  );
+  const timelineCameraIds = useMemo(() => stripCameras.map(({ camera }) => camera.id), [stripCameras]);
   const lookTargets = useMemo(() => {
     const targets = new Map<string, LookThroughTarget>();
     for (const rig of poleCameras.rigs) {
@@ -280,16 +295,23 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   const activeCamera = stripCameras.find((entry) => entry.key === lookThrough.activeKey) ?? null;
   const editorIdle = (state?.mode ?? "idle") === "idle";
 
+  const closeFocus = useCallback(() => {
+    setFocus(null);
+    setPreviewPlaying(false);
+    lookThrough.release(true);
+  }, [lookThrough]);
+
   useEffect(() => {
-    if (!lookThrough.activeKey || !editorIdle) return;
+    if ((!lookThrough.activeKey && !focus) || !editorIdle) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || isEditableTarget(event.target)) return;
-      lookThrough.release(true);
+      if (focus) closeFocus();
+      else lookThrough.release(true);
     };
     // The editor controller consumes Escape in a window capture listener; share its phase.
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [editorIdle, lookThrough]);
+  }, [closeFocus, editorIdle, focus, lookThrough]);
 
   useEffect(() => {
     if (!driving || !authoredSource || !egoActorId) return;
@@ -370,6 +392,8 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   const startSimulation = useCallback(() => {
     if (!pickedWindow || simulateDisabledReason) return;
     lookThrough.release(false);
+    setFocus(null);
+    setPreviewPlaying(false);
     setPhase({ kind: "edit", window: { startMs: Math.round(pickedWindow.startMs), endMs: Math.round(pickedWindow.endMs) } });
   }, [lookThrough, pickedWindow, simulateDisabledReason]);
 
@@ -377,11 +401,114 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     if (driving) exitDrive();
     setExpandedTool(null);
     controller?.setSelection([]);
-    if (window_) setPlayheadMs(window_.startMs);
+    if (window_) {
+      setPlayheadMs(window_.startMs);
+      setSelection(window_);
+    }
     setAuthoredSource(null);
     setRecorded({ status: "loading" });
     setPhase({ kind: "pick" });
   }, [controller, driving, exitDrive, window_]);
+
+  const timelineBounds = useMemo<TimeSelection>(
+    () => ({ startMs: nowMs - (replay.config?.retentionHours ?? 72) * 3_600_000, endMs: nowMs }),
+    [nowMs, replay.config?.retentionHours],
+  );
+
+  // An event click reviews it: its window is selected for Simulate and its busiest camera opens beside the twin.
+  const selectEvent = useCallback((event: DetectionEvent, clickMs: number) => {
+    const window = eventWindow(event, clickMs, MAX_WINDOW_MS, timelineBounds);
+    const camera = event.cameras.map((id) => stripCameras.find((entry) => entry.camera.id === id)).find((entry) => entry !== undefined) ?? stripCameras[0];
+    setSelection(window);
+    setPlayheadMs(window.startMs);
+    setFocus(camera ? { event, cameraId: camera.camera.id } : null);
+    if (camera?.alignable) lookThrough.engage(camera.key);
+    setPreviewPlaying(true);
+  }, [lookThrough, stripCameras, timelineBounds]);
+
+  const focusCamera = useCallback((cameraId: string) => {
+    const camera = stripCameras.find((entry) => entry.camera.id === cameraId);
+    if (!camera) return;
+    setFocus((current) => (current ? { ...current, cameraId } : current));
+    if (camera.alignable) lookThrough.engage(camera.key);
+  }, [lookThrough, stripCameras]);
+
+  const focusedCamera = focus && !editing ? stripCameras.find((entry) => entry.camera.id === focus.cameraId) ?? null : null;
+
+  const scrub = useCallback((ms: number) => {
+    setPreviewPlaying(false);
+    setPlayheadMs(ms);
+  }, []);
+
+  const changeSelection = useCallback((next: TimeSelection | null) => {
+    setPreviewPlaying(false);
+    setSelection(next);
+  }, []);
+
+  // Footage review plays from the playhead to the end of the selection it starts in (else to now).
+  const previewStopRef = useRef(Number.POSITIVE_INFINITY);
+  const togglePreview = useCallback(() => {
+    if (previewPlaying) {
+      setPreviewPlaying(false);
+      return;
+    }
+    let startMs = playheadMs;
+    if (selection && (playheadMs < selection.startMs || playheadMs >= selection.endMs - 250)) startMs = selection.startMs;
+    setPlayheadMs(startMs);
+    setPreviewPlaying(true);
+  }, [playheadMs, previewPlaying, selection]);
+  useEffect(() => {
+    if (!previewPlaying) return;
+    const startMs = playheadMs;
+    previewStopRef.current = selection && startMs >= selection.startMs && startMs < selection.endMs ? selection.endMs : nowMs;
+    let last = performance.now();
+    const timer = window.setInterval(() => {
+      const now = performance.now();
+      const elapsed = now - last;
+      last = now;
+      setPlayheadMs((current) => Math.min(previewStopRef.current, current + elapsed));
+    }, PREVIEW_TICK_MS);
+    return () => window.clearInterval(timer);
+    // The stop point is taken when playback starts; later playhead moves come from this timer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewPlaying]);
+  useEffect(() => {
+    if (previewPlaying && playheadMs >= previewStopRef.current) setPreviewPlaying(false);
+  }, [playheadMs, previewPlaying]);
+
+  // Recorded actors of the selected window, sampled at the playhead without running the simulation.
+  const settledSelection = useSettled(selection, PLAYHEAD_SETTLE_MS);
+  useEffect(() => {
+    if (editing || !settledSelection || !georeference) {
+      setPreview(null);
+      return;
+    }
+    const controller = new AbortController();
+    const window = settledSelection;
+    fetchWindowDetections(DETECTION_HISTORY_URL, window.startMs, window.endMs, { signal: controller.signal })
+      .then((detections) => {
+        const tracks = buildRecordedTracks(detections, { windowStartMs: window.startMs, windowEndMs: window.endMs, toScene: sceneFrameFromProj(georeference) });
+        setPreview({ window, tracks: preparePreviewTracks(tracks) });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) toast.error("Recorded detections could not load", { description: errorMessage(error) });
+      });
+    return () => controller.abort();
+  }, [editing, georeference, settledSelection]);
+
+  const previewTickRef = useRef(0);
+  const previewShownAtRef = useRef(Number.NaN);
+  useEffect(() => {
+    if (!bridge || editing) return;
+    const tSec = preview ? (playheadMs - preview.window.startMs) / 1_000 : Number.NaN;
+    const inside = preview !== null && tSec >= 0 && playheadMs <= preview.window.endMs;
+    const frame = (tick: number) => recordedPreviewFrame(inside ? preview.tracks : [], inside ? tSec : 0, tick);
+    // The bridge eases between consecutive frames; a jump is sent twice so actors land instead of gliding.
+    const jumped = !(Math.abs(playheadMs - previewShownAtRef.current) <= PREVIEW_TICK_MS * 3);
+    previewShownAtRef.current = playheadMs;
+    bridge.apply(frame(++previewTickRef.current));
+    if (jumped) bridge.apply(frame(++previewTickRef.current));
+  }, [bridge, editing, playheadMs, preview]);
 
   const driveSpeedKph = actorSpeedKph(authored.latestFrame, driving ? egoActorId : null);
   const driveClipTime = transport ? formatClipTime(transport.time, transport.duration) : null;
@@ -411,13 +538,16 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [driving, transport, transportRevision]);
 
-  // Cameras show the scrubbed instant while picking, and window start + simulation time while editing.
+  // Cameras follow the playhead while picking (settled when scrubbed), and window start + simulation time while editing.
   const cameraClock = useMemo<ArchiveClock | null>(() => {
-    if (!window_) return { timeMs: settledPlayheadMs, speed: 0 };
-    if (!transport) return { timeMs: window_.startMs, speed: 0, prefetch: true };
-    return { timeMs: window_.startMs + transport.time * 1_000, speed: transport.playing ? 1 : 0, prefetch: true };
+    if (!window_) {
+      const inSelection = selection !== null && settledPlayheadMs >= selection.startMs && settledPlayheadMs < selection.endMs;
+      return { timeMs: settledPlayheadMs, speed: previewPlaying ? 1 : 0, prefetch: focus !== null, ...(inSelection ? { untilMs: selection.endMs } : {}) };
+    }
+    if (!transport) return { timeMs: window_.startMs, speed: 0, prefetch: true, untilMs: window_.endMs };
+    return { timeMs: window_.startMs + transport.time * 1_000, speed: transport.playing ? 1 : 0, prefetch: true, untilMs: window_.endMs };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledPlayheadMs, transport, transportRevision, window_]);
+  }, [focus, previewPlaying, selection, settledPlayheadMs, transport, transportRevision, window_]);
   const archive = replay.config?.archive ?? null;
 
   const scenarioError = authoredCreationError ?? runtime.error ?? (authored.status === "error" ? authored.error : null);
@@ -472,20 +602,14 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                 data-phase={phase.kind}
                 canvasMode="interactive"
                 header={null}
-                leftSidebar={!driving ? (slotProps) => (
-                  <div
-                    {...slotProps}
-                    className={cn(slotProps.className, "flex h-full", !editing && "pointer-events-none select-none opacity-40")}
-                    inert={!editing}
-                    aria-disabled={!editing}
-                    data-testid="actor-library"
-                  >
+                leftSidebar={editing && !driving ? (slotProps) => (
+                  <div {...slotProps} className={cn(slotProps.className, "flex h-full")} data-testid="actor-library">
                     <ActorLibraryRail
                       controller={controller}
                       state={state}
                       hostRef={hostRef}
                       canvas={viewer?.renderer.domElement ?? null}
-                      activeTool={editing ? expandedTool : null}
+                      activeTool={expandedTool}
                       onExpandedToolChange={selectLibraryTool}
                       document={editorDocument}
                       trafficDetails={editorDocument ? <DocumentAmbientTrafficPanel document={editorDocument} /> : null}
@@ -493,8 +617,10 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                   </div>
                 ) : null}
                 canvas={(slotProps) => (
-                  <div {...slotProps} className={cn(slotProps.className, "relative bg-background")}>
-                    <div ref={hostRef} className="absolute inset-0">
+                  <div {...slotProps} className={cn(slotProps.className, "relative bg-background")} data-split={focusedCamera ? "" : undefined}>
+                    {/* The shell stretches every direct canvas child; the split lives inside one. */}
+                    <div className="relative">
+                    <div ref={hostRef} className={cn("absolute inset-y-0 left-0", focusedCamera ? "right-1/2" : "right-0")} data-testid="twin-view">
                       <CityView
                         key={quality}
                         manifestUrl={map.browserManifestUrl}
@@ -525,6 +651,22 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                           archive={archive}
                         />
                       ) : null}
+                    </div>
+                    {focus && focusedCamera ? (
+                      <div className="absolute inset-y-0 left-1/2 right-0 flex pb-[108px]">
+                        <EventCameraPanel
+                          event={focus.event}
+                          cameras={stripCameras.map((entry) => entry.camera)}
+                          cameraId={focusedCamera.camera.id}
+                          onCameraChange={focusCamera}
+                          clock={cameraClock}
+                          archive={archive}
+                          playing={previewPlaying}
+                          onPlayPause={togglePreview}
+                          onClose={closeFocus}
+                        />
+                      </div>
+                    ) : null}
                     </div>
                   </div>
                 )}
@@ -580,19 +722,23 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                   ) : null
                 ) : (
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-3">
-                    <CameraTimeline
+                    <EventTimeline
                       className="pointer-events-auto"
-                      cameras={timelineCameras}
                       nowMs={nowMs}
-                      earliestMs={nowMs - (replay.config?.retentionHours ?? 72) * 3_600_000}
-                      coverageUrl={DETECTION_COVERAGE_URL}
+                      earliestMs={timelineBounds.startMs}
+                      eventsUrl={DETECTION_EVENTS_URL}
+                      cameraIds={timelineCameraIds}
                       archiveListUrlTemplate={archive?.listUrlTemplate ?? null}
                       archiveOffsetSeconds={archive?.offsetSeconds ?? 0}
                       playheadMs={playheadMs}
-                      onPlayheadChange={setPlayheadMs}
+                      onPlayheadChange={scrub}
+                      playing={previewPlaying}
+                      onPlayPause={togglePreview}
                       selection={selection}
-                      onSelectionChange={setSelection}
+                      onSelectionChange={changeSelection}
                       maxSelectionMs={MAX_WINDOW_MS}
+                      focusedEventId={focus?.event.id ?? null}
+                      onEventSelect={selectEvent}
                       onSimulate={startSimulation}
                       simulateDisabledReason={simulateDisabledReason}
                     />
@@ -603,14 +749,15 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
             </EditorOverlayProvider>
           </EditorConfigurationBlockProvider>
         </div>
-        <CameraStrip
+        {/* The split view's panel shows one camera large and switches cameras itself. */}
+        {focusedCamera ? null : <CameraStrip
           cameras={stripCameras}
           activeKey={lookThrough.activeKey}
           onSelect={lookThrough.toggle}
           clock={cameraClock}
           archive={archive}
           error={poleCameras.error}
-        />
+        />}
       </div>
     </div>
   );
@@ -724,14 +871,18 @@ function useNow(intervalMs: number): number {
   return now;
 }
 
-/** `value`, once it has stopped changing for `delayMs`. */
-function useSettled<T>(value: T, delayMs: number): T {
+/** `value`, once it has stopped changing for `delayMs`; `immediate` passes it straight through. */
+function useSettled<T>(value: T, delayMs: number, immediate = false): T {
   const [settled, setSettled] = useState(value);
   useEffect(() => {
+    if (immediate) {
+      setSettled(value);
+      return;
+    }
     const timer = window.setTimeout(() => setSettled(value), delayMs);
     return () => window.clearTimeout(timer);
-  }, [delayMs, value]);
-  return settled;
+  }, [delayMs, immediate, value]);
+  return immediate ? value : settled;
 }
 
 function directMapEntry({ manifestUrl, topologyUrl, label }: { manifestUrl: string; topologyUrl: string | null; label: string }): ScenarioMapEntry {

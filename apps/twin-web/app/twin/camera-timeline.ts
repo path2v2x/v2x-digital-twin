@@ -22,9 +22,6 @@ export const DAY_MS = 24 * HOUR_MS;
 
 export const MIN_VIEW_SPAN_MS = 20 * SECOND_MS;
 export const MAX_VIEW_SPAN_MS = 12 * HOUR_MS;
-export const MAX_COVERAGE_BUCKETS = 2_000;
-/** Smallest on-screen width of one coverage bucket. */
-export const MIN_BUCKET_PX = 2;
 /** Smallest gap between two labelled ruler ticks. */
 export const MIN_TICK_SPACING_PX = 72;
 
@@ -33,8 +30,6 @@ const TICK_STEPS_MS = [
   MINUTE_MS, 2 * MINUTE_MS, 5 * MINUTE_MS, 10 * MINUTE_MS, 15 * MINUTE_MS, 30 * MINUTE_MS,
   HOUR_MS, 2 * HOUR_MS,
 ];
-
-const BUCKET_STEPS_SECONDS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1_800, 3_600, 7_200, 10_800, 21_600, 43_200, 86_400];
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -85,28 +80,6 @@ export function msToX(ms: number, view: TimeRange, widthPx: number): number {
 
 export function xToMs(x: number, view: TimeRange, widthPx: number): number {
   return widthPx > 0 ? view.startMs + x / widthPx * (view.endMs - view.startMs) : view.startMs;
-}
-
-/**
- * Coverage bucket in whole seconds: the smallest nice step at least
- * MIN_BUCKET_PX wide, never producing more than MAX_COVERAGE_BUCKETS buckets
- * for the span even after aligning the window to bucket boundaries.
- */
-export function chooseBucketSeconds(spanMs: number, widthPx: number): number {
-  const spanSeconds = Math.max(0, spanMs) / SECOND_MS;
-  const byWidth = widthPx > 0 ? MIN_BUCKET_PX * spanSeconds / widthPx : spanSeconds;
-  const byCount = spanSeconds / (MAX_COVERAGE_BUCKETS - 1);
-  const minimum = Math.max(1, byWidth, byCount);
-  return BUCKET_STEPS_SECONDS.find((step) => step >= minimum) ?? Math.ceil(minimum);
-}
-
-/** The request window for `view`, widened outward to whole buckets. */
-export function coverageWindow(view: TimeRange, bucketSeconds: number): TimeRange {
-  const bucketMs = bucketSeconds * SECOND_MS;
-  return {
-    startMs: Math.floor(view.startMs / bucketMs) * bucketMs,
-    endMs: Math.ceil(view.endMs / bucketMs) * bucketMs,
-  };
 }
 
 function pad2(value: number): string {
@@ -195,10 +168,4 @@ export function uncoveredRanges(view: TimeRange, segments: readonly TimeRange[])
   }
   if (cursor < view.endMs) gaps.push({ startMs: cursor, endMs: view.endMs });
   return gaps;
-}
-
-/** Heat-strip opacity for a bucket: log scale against the peak; zero stays transparent. */
-export function densityAlpha(detections: number, peak: number): number {
-  if (detections <= 0 || peak <= 0) return 0;
-  return 0.15 + 0.85 * Math.min(1, Math.log1p(detections) / Math.log1p(peak));
 }

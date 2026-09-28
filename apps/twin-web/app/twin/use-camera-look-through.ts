@@ -16,6 +16,8 @@ export interface CameraLookThrough {
   readonly frame: CameraFrame | null;
   /** Look through `key`, or leave camera view when it is already active. */
   toggle(key: string): void;
+  /** Look through `key`, staying in camera view if it already is. */
+  engage(key: string): void;
   /** Leave camera view; `restore` returns to the free view held before entering. */
   release(restore: boolean): void;
 }
@@ -85,5 +87,7 @@ export function useCameraLookThrough(
     if (activeKey && !targets.has(activeKey)) release(false);
   }, [activeKey, release, targets]);
 
-  return { activeKey, frame, toggle, release };
+  const engage = useCallback((key: string) => setActiveKey(key), []);
+
+  return { activeKey, frame, toggle, engage, release };
 }

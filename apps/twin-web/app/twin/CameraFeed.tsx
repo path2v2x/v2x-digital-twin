@@ -30,6 +30,8 @@ export interface ArchiveClock {
   speed: number;
   /** Paused tiles buffer a full clip (so Play starts at once) instead of a short preview. */
   prefetch?: boolean;
+  /** Footage past this instant is not needed; clips stop here instead of running five minutes. */
+  untilMs?: number;
 }
 
 export interface CameraFeedProps {
@@ -115,11 +117,14 @@ function useArchiveSegments(template: string | null, channel: string, clockMs: n
 
 /** A held (paused) tile only needs a frame, not a five-minute stream. */
 const PREVIEW_CLIP_MS = 4_000;
+/** Footage kept past `untilMs` so the last frame is not a cut. */
+const UNTIL_MARGIN_MS = 2_000;
 
 function ArchiveFeed({ camera, clock, archive, onDisplayState }: { camera: PoleCamera; clock: ArchiveClock; archive: ArchiveAccess; onDisplayState?: (state: FeedDisplayState) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const clockMs = clock.timeMs;
   const prefetch = clock.prefetch === true;
+  const untilMs = clock.untilMs ?? Number.POSITIVE_INFINITY;
   const segments = useArchiveSegments(archive.listUrlTemplate, camera.id, clockMs, archive.offsetSeconds);
   const [clip, setClip] = useState<ArchiveClipWindow | null>(null);
   const previousClockMs = useRef(Number.NaN);
@@ -142,14 +147,15 @@ function ArchiveFeed({ camera, clock, archive, onDisplayState }: { camera: PoleC
         // A short paused preview is replaced by a full clip on Play or when prefetching, not when the preview runs out.
         const preview = current !== null && current.endMs - current.startMs <= PREVIEW_CLIP_MS;
         const resolved = preview && (resumed || prefetch) ? archiveClipAt(clockMs, leadMs.current, segments) : resolveArchiveClip(current, previousClockMs.current, clockMs, clock.speed, leadMs.current, segments);
-        const next = resolved !== current && resolved && clock.speed === 0 && !prefetch ? limitClip(resolved, PREVIEW_CLIP_MS) : resolved;
+        const needed = resolved !== current && resolved ? limitClip(resolved, Math.max(MIN_CLIP_MS, untilMs + UNTIL_MARGIN_MS - resolved.startMs)) : resolved;
+        const next = needed !== current && needed && clock.speed === 0 && !prefetch ? limitClip(needed, PREVIEW_CLIP_MS) : needed;
         if (next !== current) leadCorrections.current = 0;
         return next;
       });
       previousSpeed.current = clock.speed;
     }
     previousClockMs.current = clockMs;
-  }, [clockMs, clock.speed, prefetch, segments]);
+  }, [clockMs, clock.speed, prefetch, segments, untilMs]);
 
   const src = clip ? archiveVideoUrl(archive.urlTemplate, camera.id, clip, archive.offsetSeconds) : null;
   const displayState: FeedDisplayState = !src ? (segments === undefined ? "starting" : "no-recording") : clock.speed === 0 ? "paused" : "replay";

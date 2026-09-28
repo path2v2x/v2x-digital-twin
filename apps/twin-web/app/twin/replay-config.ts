@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 export const REPLAY_CONFIG_URL = "/detections/replay-config";
 export const DETECTION_HISTORY_URL = "/detections/history";
-export const DETECTION_COVERAGE_URL = "/detections/coverage";
+export const DETECTION_EVENTS_URL = "/detections/events";
 
 /** How to fetch archived camera footage. */
 export interface ArchiveAccess {

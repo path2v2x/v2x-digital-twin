@@ -16,6 +16,7 @@
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/coverage` | bucketed historical detection availability |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/history` | timestamp-ordered historical detections |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/objects` | per-object summaries over a time range |
+| HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/events` | moving objects clustered into per-kind events |
 | HTTP | `http://<host>:<TWIN_HTTP_PORT>/detections/replay-config` | retention, archive URL templates and georeference for browser-side replay |
 
 The default ports are 8765 and 8090. `TWIN_WS_PORT` and `TWIN_HTTP_PORT` override them. path-rfs uses 8865 and 8190 because the drive application owns the default ports.
@@ -140,10 +141,18 @@ uses this route for its event list.
 
 `GET /detections/coverage?start=<ISO>&end=<ISO>&bucket=<seconds>` returns
 `{start,end,bucket_seconds,buckets}`. Each bucket contains
-`{start,detections,objects}`, including empty buckets. With `by=camera` each
-bucket also carries `cameras: {chN: {detections, objects}}` for the cameras
-seen in it. The default bucket is 300 seconds, the minimum is 1 second, and
-requests over 2000 buckets return HTTP 400. All three detection routes return JSON errors with HTTP 400 for
+`{start,detections,objects}`, including empty buckets. The default bucket is
+300 seconds, the minimum is 1 second, and requests over 2000 buckets return
+HTTP 400.
+
+`GET /detections/events?start=<ISO>&end=<ISO>` (at most 24 hours) returns
+`{start,end,events}` with events `{id,kind,start,end,objects,detections,cameras}`,
+ordered by start. `kind` is `pedestrian` (person), `cyclist` (bicycle,
+motorcycle), `vehicle` (car, van) or `large_vehicle` (truck, bus); `cameras`
+lists `{camera,detections}` busiest first. A track (one `object_id`) counts
+only with at least 5 detections over at least 1 s; vehicles whose positions
+span less than 3 m are parked and dropped. Same-kind tracks starting within
+5 s of the previous one's end merge into one event, across cameras. All three detection routes return JSON errors with HTTP 400 for
 invalid parameters.
 
 `GET /detections/replay-config` returns
