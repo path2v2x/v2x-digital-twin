@@ -49,14 +49,11 @@ export function parseDetectionEvents(body: unknown): DetectionEvent[] {
 
 /**
  * The simulation window for a clicked event: the event itself from its first
- * detection, at most `maxMs` long and at least `minMs` (so a very short
- * detection can still be simulated), never past `nowMs`. A detection that
- * started before the timeline's hour keeps its start: history and footage
- * reach back further than the timeline shows.
+ * detection, at most `maxMs` long. Events are at least 2 s (the server drops
+ * shorter ones), the shortest window Simulate takes.
  */
-export function eventWindow(event: DetectionEvent, minMs: number, maxMs: number, nowMs: number): TimeRange {
-  const endMs = Math.min(nowMs, Math.max(event.startMs + minMs, Math.min(event.endMs, event.startMs + maxMs)));
-  return { startMs: Math.min(event.startMs, endMs - minMs), endMs };
+export function eventWindow(event: DetectionEvent, maxMs: number): TimeRange {
+  return { startMs: event.startMs, endMs: Math.min(event.endMs, event.startMs + maxMs) };
 }
 
 export function describeEvent(event: DetectionEvent): string {

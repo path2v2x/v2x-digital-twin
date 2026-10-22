@@ -56,6 +56,8 @@ export const EVENT_MIN_SPAN_MS = 1_000;
 /** Vehicles that move less than this are parked, not events. */
 export const PARKED_MAX_EXTENT_M = 3;
 export const EVENT_MERGE_GAP_MS = 5_000;
+/** A merged event shorter than this, first to last detection, is dropped. */
+export const EVENT_MIN_DURATION_MS = 2_000;
 
 const EVENT_KINDS: Record<string, EventKind> = {
   person: 'pedestrian',
@@ -310,6 +312,7 @@ export class DetectionHistory {
     const events: DetectionEvent[] = [];
     const open = new Map<EventKind, { kind: EventKind; startMs: number; endMs: number; objects: number; detections: number; cameras: Map<string, number> }>();
     const close = (event: { kind: EventKind; startMs: number; endMs: number; objects: number; detections: number; cameras: Map<string, number> }) => {
+      if (event.endMs - event.startMs < EVENT_MIN_DURATION_MS) return;
       events.push({
         id: `${event.kind}-${event.startMs}`,
         kind: event.kind,

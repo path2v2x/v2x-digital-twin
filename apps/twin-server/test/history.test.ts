@@ -53,7 +53,7 @@ describe('DetectionHistory', () => {
     ]);
   });
 
-  it('clusters moving tracks into per-kind events and drops fragments and parked vehicles', () => {
+  it('clusters moving tracks into per-kind events and drops fragments, events under 2 s and parked vehicles', () => {
     const store = history();
     const baseSec = 1_756_000_000;
     const frame = (camera: string, t: number, detections: DetectionRecord[]) =>
@@ -70,6 +70,8 @@ describe('DetectionHistory', () => {
     // A two-detection fragment never becomes an event.
     frame('ch1', 50, [walker('ch1_noise', 0)]);
     frame('ch1', 51, [walker('ch1_noise', 1)]);
+    // Six detections over 1.5 s pass the per-track floor, but the event is shorter than 2 s.
+    for (let i = 0; i < 6; i += 1) frame('ch2', 44 + i * 0.3, [walker('ch2_brief', i)]);
 
     const iso = (t: number) => new Date((baseSec + t) * 1000).toISOString();
     expect(store.events(baseSec * 1000, (baseSec + 60) * 1000)).toEqual([

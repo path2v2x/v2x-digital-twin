@@ -411,7 +411,7 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
 
   // A detection click plays it from its first detection: its span is selected for Simulate and its busiest camera opens beside the twin.
   const selectEvent = useCallback((event: DetectionEvent) => {
-    const window = eventWindow(event, MIN_WINDOW_MS, MAX_WINDOW_MS, nowMs);
+    const window = eventWindow(event, MAX_WINDOW_MS);
     const camera = event.cameras.map((id) => stripCameras.find((entry) => entry.camera.id === id)).find((entry) => entry !== undefined) ?? stripCameras[0];
     previewStopRef.current = previewStopMs(event.startMs, window, nowMs);
     setSelection(window);

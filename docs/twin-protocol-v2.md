@@ -152,8 +152,9 @@ motorcycle), `vehicle` (car, van) or `large_vehicle` (truck, bus); `cameras`
 lists `{camera,detections}` busiest first. A track (one `object_id`) counts
 only with at least 5 detections over at least 1 s; vehicles whose positions
 span less than 3 m are parked and dropped. Same-kind tracks starting within
-5 s of the previous one's end merge into one event, across cameras. All three detection routes return JSON errors with HTTP 400 for
-invalid parameters.
+5 s of the previous one's end merge into one event, across cameras, and an
+event shorter than 2 s from first to last detection is dropped. All three
+detection routes return JSON errors with HTTP 400 for invalid parameters.
 
 `GET /detections/replay-config` returns
 `{retention_hours, history_available, archive_url_template,
