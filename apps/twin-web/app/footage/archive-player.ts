@@ -51,10 +51,13 @@ function updateEnd(buffer: SourceBuffer): Promise<void> {
   return promise;
 }
 
-/** An early request nobody claims within this long is cancelled. */
+/** An early request stays registered this long; nobody having taken it over by then, it is cancelled. */
 const EARLY_REQUEST_TTL_MS = 5_000;
-/** Footage requests started before a player asks (pointer resting on or pressing a detection), by URL. */
-const earlyRequests = new Map<string, { response: Promise<Response>; controller: AbortController; timer: number }>();
+/**
+ * Footage requests started before a player asks (pointer resting on or pressing a detection), by URL.
+ * A taken-over request stays listed until it expires, so asking again for the same window starts nothing.
+ */
+const earlyRequests = new Map<string, { response: Promise<Response>; controller: AbortController; taken: boolean }>();
 
 /**
  * Starts requesting `span` of `channel` before a player asks for it: MediaMTX
@@ -67,13 +70,13 @@ export async function requestFootageEarly(access: ArchiveAccess, channel: string
   const url = footageUrl(access, channel, span, offsetSeconds);
   if (earlyRequests.has(url)) return;
   const controller = new AbortController();
-  const response = fetch(url, { signal: controller.signal });
-  response.catch(() => undefined);
-  const timer = window.setTimeout(() => {
+  const request = { response: fetch(url, { signal: controller.signal }), controller, taken: false };
+  request.response.catch(() => undefined);
+  earlyRequests.set(url, request);
+  window.setTimeout(() => {
     earlyRequests.delete(url);
-    controller.abort();
+    if (!request.taken) controller.abort();
   }, EARLY_REQUEST_TTL_MS);
-  earlyRequests.set(url, { response, controller, timer });
 }
 
 /**
@@ -282,12 +285,12 @@ export class ArchivePlayer {
     const url = footageUrl(session.access, session.channel, span, await offsetSeconds);
     if (signal.aborted) return;
     const early = earlyRequests.get(url);
-    if (early) {
-      earlyRequests.delete(url);
-      window.clearTimeout(early.timer);
-      signal.addEventListener("abort", () => early.controller.abort(), { once: true });
+    const takeOver = early && !early.taken ? early : null;
+    if (takeOver) {
+      takeOver.taken = true;
+      signal.addEventListener("abort", () => takeOver.controller.abort(), { once: true });
     }
-    const response = await (early?.response ?? fetch(url, { signal }));
+    const response = await (takeOver?.response ?? fetch(url, { signal }));
     if (response.status === 404) {
       // MediaMTX answers 404 when the window starts where nothing was recorded.
       this.exhaustedAtMs = span.startMs;
