@@ -60,10 +60,10 @@ const EARLY_REQUEST_TTL_MS = 5_000;
 const earlyRequests = new Map<string, { response: Promise<Response>; controller: AbortController; taken: boolean }>();
 
 /**
- * Starts requesting `span` of `channel` before a player asks for it: MediaMTX
- * takes 250-400 ms to start answering, which this hides behind the time a
- * pointer rests on a detection. The player requesting the same window takes
- * over the response.
+ * Starts requesting `span` of `channel` before a player asks for it, so the
+ * round trip and the pre-roll from the preceding keyframe (up to ~1.4 MB) load
+ * while the pointer rests on a detection. The player requesting the same
+ * window takes over the response.
  */
 export async function requestFootageEarly(access: ArchiveAccess, channel: string, span: TimeRange): Promise<void> {
   const offsetSeconds = await archiveOffsetsFor(access.offsetsUrl, channel, access.offsetSeconds).at(span.startMs);
