@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/app/lib/utils";
-import { eventFootageWindow, LEAD_IN_MS } from "./archive";
+import { eventFootageWindow, LEAD_IN_MS, windowAround } from "./archive";
 import type { DetectionEvent } from "./detection-events";
 import { EventTimeline } from "./EventTimeline";
 import { FootagePlayer, type FootageRequest } from "./FootagePlayer";
@@ -47,10 +47,11 @@ export function DetectionReview() {
     setPlaying(play);
   }, []);
 
-  const scrub = useCallback((ms: number) => {
+  // A drag waits for the pointer to settle before loading new footage; a click or key press loads at once.
+  const scrub = useCallback((ms: number, dragging: boolean) => {
     setPlaying(false);
     setPlayheadMs(ms);
-    setRequest({ ms });
+    setRequest(dragging ? { ms } : { ms, window: windowAround(ms) });
     setFocusedEventId(visibleEvents.find((event) => event.startMs <= ms && ms <= event.endMs)?.id ?? null);
   }, [visibleEvents]);
 
@@ -94,7 +95,7 @@ export function DetectionReview() {
         switchCamera(CAMERAS[Number(event.key) - 1]!);
       } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        scrub(playheadRef.current + (event.key === "ArrowLeft" ? -ARROW_STEP_MS : ARROW_STEP_MS));
+        scrub(playheadRef.current + (event.key === "ArrowLeft" ? -ARROW_STEP_MS : ARROW_STEP_MS), false);
       }
     };
     window.addEventListener("keydown", onKeyDown);

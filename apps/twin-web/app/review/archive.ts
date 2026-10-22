@@ -10,26 +10,29 @@ export interface ArchiveAccess {
   offsetSeconds: number;
 }
 
-/** Footage loaded around a timeline click when no event says otherwise. */
+/** Footage loaded from a timeline click when no event says otherwise. */
 export const DEFAULT_WINDOW_MS = 30_000;
 /** Longest single footage request. */
 export const MAX_WINDOW_MS = 60_000;
-/** Footage kept on each side of a clicked event. */
+/** Footage kept after a clicked event ends. */
 export const EVENT_PADDING_MS = 5_000;
-/** A timeline click loads from slightly before the clicked instant so stepping back stays instant. */
+/** A clicked event plays from this long before its first detection. */
 export const LEAD_IN_MS = 2_000;
 
 const SECOND = 1_000;
 
-/** Whole-second window starting `LEAD_IN_MS` before `ms`. */
+/**
+ * Window starting at the whole second of `ms`. Every byte before the first
+ * shown frame delays it, so windows start where the picture is needed.
+ */
 export function windowAround(ms: number, lengthMs = DEFAULT_WINDOW_MS): TimeRange {
-  const startMs = Math.floor((ms - LEAD_IN_MS) / SECOND) * SECOND;
+  const startMs = Math.floor(ms / SECOND) * SECOND;
   return { startMs, endMs: startMs + lengthMs };
 }
 
-/** The clicked event plus padding, in whole seconds, at most `MAX_WINDOW_MS` from its start. */
+/** A clicked event from `LEAD_IN_MS` before it to `EVENT_PADDING_MS` after, in whole seconds, at most `MAX_WINDOW_MS`. */
 export function eventFootageWindow(event: DetectionEvent): TimeRange {
-  const startMs = Math.floor((event.startMs - EVENT_PADDING_MS) / SECOND) * SECOND;
+  const startMs = Math.floor((event.startMs - LEAD_IN_MS) / SECOND) * SECOND;
   const endMs = Math.ceil((event.endMs + EVENT_PADDING_MS) / SECOND) * SECOND;
   return { startMs, endMs: Math.min(endMs, startMs + MAX_WINDOW_MS) };
 }

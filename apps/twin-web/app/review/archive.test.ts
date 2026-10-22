@@ -7,18 +7,18 @@ const at = (iso: string) => Date.parse(iso);
 const event = (startIso: string, endIso: string): DetectionEvent => ({ id: 'e', kind: 'vehicle', startMs: at(startIso), endMs: at(endIso), objects: 1, detections: 20, cameras: ['ch4'] });
 
 describe('footage windows', () => {
-  it('loads a clicked event whole, padded by 5 s on whole seconds', () => {
+  it('loads a clicked event from 2 s before it to 5 s after, on whole seconds', () => {
     expect(eventFootageWindow(event('2026-10-21T21:53:15.000Z', '2026-10-21T21:53:23.700Z')))
-      .toEqual({ startMs: at('2026-10-21T21:53:10Z'), endMs: at('2026-10-21T21:53:29Z') });
+      .toEqual({ startMs: at('2026-10-21T21:53:13Z'), endMs: at('2026-10-21T21:53:29Z') });
   });
 
   it('caps a long event at the maximum window from its start', () => {
     const window = eventFootageWindow(event('2026-10-21T21:00:00.400Z', '2026-10-21T21:05:00Z'));
-    expect(window).toEqual({ startMs: at('2026-10-21T20:59:55Z'), endMs: at('2026-10-21T20:59:55Z') + MAX_WINDOW_MS });
+    expect(window).toEqual({ startMs: at('2026-10-21T20:59:58Z'), endMs: at('2026-10-21T20:59:58Z') + MAX_WINDOW_MS });
   });
 
-  it('starts a timeline-click window on the whole second 2 s before the click', () => {
-    expect(windowAround(at('2026-10-21T21:00:10.900Z'))).toEqual({ startMs: at('2026-10-21T21:00:08Z'), endMs: at('2026-10-21T21:00:38Z') });
+  it('starts a timeline-click window on the clicked whole second', () => {
+    expect(windowAround(at('2026-10-21T21:00:10.900Z'))).toEqual({ startMs: at('2026-10-21T21:00:10Z'), endMs: at('2026-10-21T21:00:40Z') });
   });
 
   it('requests archive time (detection time plus offset) and the duration in seconds', () => {

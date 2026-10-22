@@ -18,8 +18,8 @@ export interface EventTimelineProps {
   archiveListUrlTemplate: string | null;
   archiveOffsetSeconds: number;
   playheadMs: number;
-  /** The user clicked or dragged the playhead to `ms`. */
-  onPlayheadChange: (ms: number) => void;
+  /** The user clicked (`dragging` false) or dragged the playhead to `ms`. */
+  onPlayheadChange: (ms: number, dragging: boolean) => void;
   playing: boolean;
   onPlayPause: () => void;
   focusedEventId: string | null;
@@ -247,7 +247,7 @@ export function EventTimeline({
       const originSpan = drag.originView.endMs - drag.originView.startMs;
       setView(pan(drag.originView, -(x - drag.originX) / Math.max(1, width) * originSpan, bounds));
     } else {
-      onPlayheadChange(clampToBounds(xToMs(x, view, width)));
+      onPlayheadChange(clampToBounds(xToMs(x, view, width)), true);
     }
   };
 
@@ -259,7 +259,7 @@ export function EventTimeline({
     if (drag.moved || drag.kind !== "scrub") return;
     const clicked = drag.eventId ? eventsById.get(drag.eventId) : undefined;
     if (clicked) onEventSelect(clicked);
-    else onPlayheadChange(clampToBounds(xToMs(trackX(event), view, width)));
+    else onPlayheadChange(clampToBounds(xToMs(trackX(event), view, width)), false);
   };
 
   const onPointerCancel = () => {
