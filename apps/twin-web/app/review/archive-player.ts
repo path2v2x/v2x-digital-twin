@@ -5,6 +5,8 @@ export type FootageStatus = "loading" | "ready" | "no-recording" | "error";
 
 /** Fetch the next window this long before playback reaches the end of loaded footage. */
 const PREFETCH_MS = 8_000;
+/** After a requested window has loaded, this much footage before it is fetched in the background so stepping back stays instant. */
+const BACKFILL_MS = 10_000;
 /** Footage kept in the browser; the windows farthest from the playhead are dropped beyond this. */
 const MAX_BUFFERED_MS = 240_000;
 /** Scrubbing into footage that is not loaded waits this long for the pointer to settle before requesting it. */
@@ -28,6 +30,8 @@ interface Load {
   readonly session: Session;
   readonly span: TimeRange;
   readonly controller: AbortController;
+  /** Fetched ahead of need (playback prefetch, backfill) rather than for a requested instant. */
+  readonly background: boolean;
 }
 
 export interface PlaybackTick {
@@ -123,7 +127,7 @@ export class ArchivePlayer {
     }
     if (!this.load && endMs - ms < PREFETCH_MS) {
       const startMs = Math.floor(endMs / 1_000) * 1_000;
-      this.startLoad({ startMs, endMs: startMs + DEFAULT_WINDOW_MS });
+      this.startLoad({ startMs, endMs: startMs + DEFAULT_WINDOW_MS }, true);
     }
     return { ms, ended: false };
   }
@@ -209,11 +213,11 @@ export class ArchivePlayer {
     return true;
   }
 
-  private startLoad(span: TimeRange): void {
+  private startLoad(span: TimeRange, background = false): void {
     const session = this.session;
     if (!session) return;
     this.load?.controller.abort();
-    const load: Load = { session, span, controller: new AbortController() };
+    const load: Load = { session, span, controller: new AbortController(), background };
     this.load = load;
     this.queue = this.queue
       .then(() => this.stream(load))
@@ -272,6 +276,8 @@ export class ArchivePlayer {
           // A previous window may have been cut mid-fragment: reset the parser before positioning this one.
           session.buffer.abort();
           session.buffer.timestampOffset = (span.startMs - session.originMs) / 1_000;
+          // Frames past the span would overwrite (and break the decode chain of) footage loaded after it, e.g. by a backfill.
+          session.buffer.appendWindowEnd = (span.endMs - session.originMs) / 1_000;
           placed = true;
           await this.append(session, pending, signal);
         }
@@ -286,6 +292,9 @@ export class ArchivePlayer {
       this.exhaustedAtMs = loadedAfter ?? span.startMs;
     }
     this.retryFromTarget(span);
+    if (!load.background && this.load === load && this.locate(session, span.startMs - 1_000) === null) {
+      this.startLoad({ startMs: span.startMs - BACKFILL_MS, endMs: span.startMs }, true);
+    }
   }
 
   private async append(session: Session, chunk: Uint8Array<ArrayBuffer>, signal: AbortSignal): Promise<void> {
