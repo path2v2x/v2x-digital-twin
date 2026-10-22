@@ -51,6 +51,31 @@ function updateEnd(buffer: SourceBuffer): Promise<void> {
   return promise;
 }
 
+/** An early request nobody claims within this long is cancelled. */
+const EARLY_REQUEST_TTL_MS = 5_000;
+/** Footage requests started before a player asks (pointer resting on or pressing a detection), by URL. */
+const earlyRequests = new Map<string, { response: Promise<Response>; controller: AbortController; timer: number }>();
+
+/**
+ * Starts requesting `span` of `channel` before a player asks for it: MediaMTX
+ * takes 250-400 ms to start answering, which this hides behind the time a
+ * pointer rests on a detection. The player requesting the same window takes
+ * over the response.
+ */
+export async function requestFootageEarly(access: ArchiveAccess, channel: string, span: TimeRange): Promise<void> {
+  const offsetSeconds = await archiveOffsetsFor(access.offsetsUrl, channel, access.offsetSeconds).at(span.startMs);
+  const url = footageUrl(access, channel, span, offsetSeconds);
+  if (earlyRequests.has(url)) return;
+  const controller = new AbortController();
+  const response = fetch(url, { signal: controller.signal });
+  response.catch(() => undefined);
+  const timer = window.setTimeout(() => {
+    earlyRequests.delete(url);
+    controller.abort();
+  }, EARLY_REQUEST_TTL_MS);
+  earlyRequests.set(url, { response, controller, timer });
+}
+
 /**
  * Plays archived footage of one camera through a single `<video>` element.
  * Each footage window is one MediaMTX fMP4 request streamed into a shared
@@ -256,7 +281,13 @@ export class ArchivePlayer {
     }
     const url = footageUrl(session.access, session.channel, span, await offsetSeconds);
     if (signal.aborted) return;
-    const response = await fetch(url, { signal });
+    const early = earlyRequests.get(url);
+    if (early) {
+      earlyRequests.delete(url);
+      window.clearTimeout(early.timer);
+      signal.addEventListener("abort", () => early.controller.abort(), { once: true });
+    }
+    const response = await (early?.response ?? fetch(url, { signal }));
     if (response.status === 404) {
       // MediaMTX answers 404 when the window starts where nothing was recorded.
       this.exhaustedAtMs = span.startMs;

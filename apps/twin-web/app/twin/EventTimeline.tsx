@@ -44,6 +44,8 @@ export interface EventTimelineProps {
   focusedEventId: string | null;
   /** A click on a detection block. */
   onEventSelect: (event: DetectionEvent) => void;
+  /** The pointer rests on (100 ms) or presses a detection block: it is likely to be clicked. */
+  onEventIntent: (event: DetectionEvent) => void;
   onSimulate: () => void;
   simulateDisabledReason: string | null;
   className?: string;
@@ -59,6 +61,8 @@ type SelectionHit = "start" | "end" | "body" | null;
 const WHEEL_ZOOM_BASE = 1.2;
 const WHEEL_NOTCH_PX = 100;
 const DRAG_THRESHOLD_PX = 3;
+/** The pointer resting this long on a detection starts requesting its footage. */
+const HOVER_INTENT_MS = 100;
 const EDGE_HIT_PX = 6;
 const EVENTS_DEBOUNCE_MS = 150;
 const ARCHIVE_DEBOUNCE_MS = 300;
@@ -90,6 +94,7 @@ export function EventTimeline({
   maxSelectionMs,
   focusedEventId,
   onEventSelect,
+  onEventIntent,
   onSimulate,
   simulateDisabledReason,
   className,
@@ -104,6 +109,7 @@ export function EventTimeline({
   const rootRef = useRef<HTMLDivElement>(null);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
+  const intentTimerRef = useRef<number | undefined>(undefined);
   const widthRef = useRef(0);
   const boundsRef = useRef(bounds);
   const previousNowRef = useRef(nowMs);
@@ -271,6 +277,11 @@ export function EventTimeline({
     if (event.button === 1) return beginDrag(event, { kind: "pan", ...common, originView: view });
     if (event.button !== 0) return;
     const eventId = eventIdAt(event);
+    const pressed = eventId ? eventsById.get(eventId) : undefined;
+    if (pressed) {
+      window.clearTimeout(intentTimerRef.current);
+      onEventIntent(pressed);
+    }
     const hit = eventId ? (hitSelection(x) === "body" ? "body" : null) : hitSelection(x);
     if (selection && hit === "start") return beginDrag(event, { kind: "select", ...common, anchorMs: selection.endMs, eventId: null });
     if (selection && hit === "end") return beginDrag(event, { kind: "select", ...common, anchorMs: selection.startMs, eventId: null });
@@ -447,6 +458,11 @@ export function EventTimeline({
                 data-event-id={event.id}
                 data-event-kind={event.kind}
                 data-testid="timeline-event"
+                onPointerEnter={() => {
+                  window.clearTimeout(intentTimerRef.current);
+                  intentTimerRef.current = window.setTimeout(() => onEventIntent(event), HOVER_INTENT_MS);
+                }}
+                onPointerLeave={() => window.clearTimeout(intentTimerRef.current)}
               >
                 {eventWidth >= ICON_MIN_PX ? <Icon aria-hidden="true" className="pointer-events-none size-4 shrink-0" /> : null}
                 {eventWidth >= COUNT_MIN_PX && event.objects > 1 ? <span className="pointer-events-none tabular-nums">{event.objects}</span> : null}

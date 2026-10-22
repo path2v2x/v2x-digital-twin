@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/app/lib/utils";
 import { eventFootageWindow, windowAround } from "../footage/archive";
+import { requestFootageEarly } from "../footage/archive-player";
 import { FootagePlayer, type FootageRequest } from "../footage/FootagePlayer";
 import type { DetectionEvent } from "../twin/detection-events";
 import { DETECTION_EVENTS_URL, useReplayConfig } from "../twin/replay-config";
@@ -43,10 +44,10 @@ export function DetectionReview() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // A detection from its first frame, on a camera that saw it (the current one when it did). Clicking one plays it.
+  // A detection from its first frame. Clicking one plays it.
   const openEvent = useCallback((event: DetectionEvent, play: boolean) => {
     resumeAfterDragRef.current = null;
-    setCamera((current) => (event.cameras.includes(current) ? current : event.cameras[0] ?? current));
+    setCamera((current) => cameraForEvent(event, current));
     setFocusedEventId(event.id);
     setPlayheadMs(event.startMs);
     setRequest({ ms: event.startMs, window: eventFootageWindow(event) });
@@ -176,6 +177,9 @@ export function DetectionReview() {
           onScrub={scrub}
           onSeek={seek}
           onEventSelect={(event) => openEvent(event, true)}
+          onEventIntent={(event) => {
+            if (access) void requestFootageEarly(access, cameraForEvent(event, camera), eventFootageWindow(event));
+          }}
           playing={playing}
           onPlayPause={() => setPlaying((current) => !current)}
           focusedEventId={focusedEventId}
@@ -184,4 +188,13 @@ export function DetectionReview() {
       )}
     </div>
   );
+}
+
+/**
+ * The camera a detection plays on: the current one when it saw the detection,
+ * otherwise the one that saw most of it. Footage requested early for a
+ * detection is only used if it is for this same camera.
+ */
+function cameraForEvent(event: DetectionEvent, current: string): string {
+  return event.cameras.includes(current) ? current : event.cameras[0] ?? current;
 }

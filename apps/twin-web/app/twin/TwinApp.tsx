@@ -34,6 +34,8 @@ import { preparePreviewTracks, recordedPreviewFrame, type PreviewTrack } from "@
 import { buildRecordedTracks, fetchWindowDetections, recordedScenarioParts, sceneFrameFromProj } from "@/app/lib/recorded/recorded-tracks";
 import type { ScenarioAuthoringQuality } from "@/app/lib/scenario/contracts";
 import { useEditorRuntime } from "@/app/lib/scenario/editor/use-editor-runtime";
+import { windowAround } from "../footage/archive";
+import { requestFootageEarly } from "../footage/archive-player";
 import type { ArchiveClock } from "./CameraFeed";
 import { CameraStrip, type StripCamera } from "./CameraStrip";
 import { CameraViewOverlay } from "./CameraViewOverlay";
@@ -409,17 +411,23 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   // Footage review stops at the end of the selection the playhead is in, else at now.
   const previewStopRef = useRef(Number.POSITIVE_INFINITY);
 
+  // The camera a detection opens beside the twin: the busiest one on the mast. Footage requested early for a detection must be for this camera.
+  const paneCameraFor = useCallback(
+    (event: DetectionEvent) => event.cameras.map((id) => stripCameras.find((entry) => entry.camera.id === id)).find((entry) => entry !== undefined) ?? stripCameras[0],
+    [stripCameras],
+  );
+
   // A detection click plays it from its first detection: its span is selected for Simulate and its busiest camera opens beside the twin.
   const selectEvent = useCallback((event: DetectionEvent) => {
     const window = eventWindow(event, MAX_WINDOW_MS);
-    const camera = event.cameras.map((id) => stripCameras.find((entry) => entry.camera.id === id)).find((entry) => entry !== undefined) ?? stripCameras[0];
+    const camera = paneCameraFor(event);
     previewStopRef.current = previewStopMs(event.startMs, window, nowMs);
     setSelection(window);
     setPlayheadMs(event.startMs);
     setFocus(camera ? { event, cameraId: camera.camera.id } : null);
     if (camera?.alignable) lookThrough.engage(camera.key);
     setPreviewPlaying(true);
-  }, [lookThrough, nowMs, stripCameras]);
+  }, [lookThrough, nowMs, paneCameraFor]);
 
   const focusCamera = useCallback((cameraId: string) => {
     const camera = stripCameras.find((entry) => entry.camera.id === cameraId);
@@ -743,6 +751,11 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
                       maxSelectionMs={MAX_WINDOW_MS}
                       focusedEventId={focus?.event.id ?? null}
                       onEventSelect={selectEvent}
+                      onEventIntent={(event) => {
+                        const camera = paneCameraFor(event);
+                        // The pane mounts on click and asks for the window from the detection's first second.
+                        if (archive && camera) void requestFootageEarly(archive, camera.camera.id, windowAround(event.startMs));
+                      }}
                       onSimulate={startSimulation}
                       simulateDisabledReason={simulateDisabledReason}
                     />

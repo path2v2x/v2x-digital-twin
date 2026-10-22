@@ -24,6 +24,8 @@ export interface EventTimelineProps {
   onSeek: (ms: number) => void;
   /** A click on a detection block. */
   onEventSelect: (event: DetectionEvent) => void;
+  /** The pointer rests on (100 ms) or presses a detection block: it is likely to be clicked. */
+  onEventIntent: (event: DetectionEvent) => void;
   playing: boolean;
   onPlayPause: () => void;
   focusedEventId: string | null;
@@ -38,6 +40,8 @@ type Drag =
 const WHEEL_ZOOM_BASE = 1.2;
 const WHEEL_NOTCH_PX = 100;
 const DRAG_THRESHOLD_PX = 3;
+/** The pointer resting this long on a detection starts requesting its footage. */
+const HOVER_INTENT_MS = 100;
 const EVENTS_DEBOUNCE_MS = 150;
 const ARCHIVE_DEBOUNCE_MS = 300;
 /** Events are fetched for the view plus this share of its span on each side, so panning shows them at once. */
@@ -63,6 +67,7 @@ export function EventTimeline({
   onScrub,
   onSeek,
   onEventSelect,
+  onEventIntent,
   playing,
   onPlayPause,
   focusedEventId,
@@ -77,6 +82,7 @@ export function EventTimeline({
   const [gaps, setGaps] = useState<TimeRange[]>([]);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
+  const intentTimerRef = useRef<number | undefined>(undefined);
   const widthRef = useRef(0);
   const boundsRef = useRef(bounds);
   const previousNowRef = useRef(nowMs);
@@ -235,7 +241,13 @@ export function EventTimeline({
     const x = trackX(event);
     if (event.button === 1) return beginDrag(event, { kind: "pan", pointerId: event.pointerId, originX: x, originView: view, moved: false });
     if (event.button !== 0) return;
-    beginDrag(event, { kind: "scrub", pointerId: event.pointerId, originX: x, moved: false, eventId: eventIdAt(event) });
+    const eventId = eventIdAt(event);
+    const pressed = eventId ? eventsById.get(eventId) : undefined;
+    if (pressed) {
+      window.clearTimeout(intentTimerRef.current);
+      onEventIntent(pressed);
+    }
+    beginDrag(event, { kind: "scrub", pointerId: event.pointerId, originX: x, moved: false, eventId });
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -357,6 +369,11 @@ export function EventTimeline({
                 data-event-id={event.id}
                 data-event-kind={event.kind}
                 data-testid="timeline-event"
+                onPointerEnter={() => {
+                  window.clearTimeout(intentTimerRef.current);
+                  intentTimerRef.current = window.setTimeout(() => onEventIntent(event), HOVER_INTENT_MS);
+                }}
+                onPointerLeave={() => window.clearTimeout(intentTimerRef.current)}
               >
                 {eventWidth >= ICON_MIN_PX ? <Icon aria-hidden="true" className="pointer-events-none size-4 shrink-0" /> : null}
                 {eventWidth >= COUNT_MIN_PX && event.objects > 1 ? <span className="pointer-events-none tabular-nums">{event.objects}</span> : null}
