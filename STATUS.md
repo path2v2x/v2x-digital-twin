@@ -9,7 +9,7 @@ vendored packages.
 | Surface | State |
 |---|---|
 | `apps/twin-server` | Active on path-rfs (`v2x-twin-server`, WS `:8865`, HTTP `:8190`); shared live world re-rooted every 600 s, `/twin`, `/drive`, `/camera-feeds`, `/streams/` (used by the dev console, not the web UI), local detection sync, 72-hour history, `/detections/replay-config` |
-| `apps/twin-web` | Active on path-rfs (`v2x-twin-web`, loopback `:5199`) behind `twin.path2v2x.net`; pick a ≤60 s recorded window on a colour-coded event timeline (click an event for a twin/camera split view), then simulate it in the browser with recorded actors, synced archive footage and user-placed actors (no live mode) |
+| `apps/twin-web` | Active on path-rfs (`v2x-twin-web`, loopback `:5199`) behind `twin.path2v2x.net`; detection review: the past hour of detections on a colour-coded timeline and the selected camera's annotated footage (`chN`), streamed per window into MediaSource for instant scrubbing |
 | `apps/dev-console` | Developer `/drive` protocol console |
 | `path2v2x/co-perception` | External and authoritative for live detections (`:8091`) and live camera frames (`/tmp/coperception_output.sock`); currently served on path-rfs by the `jpark-co-perception` service, with this repository's `v2x-perception` unit stopped |
 
@@ -39,8 +39,6 @@ with recorded fallback managed by the server. `/health` reports
 path-rfs. `scripts/systemd/v2x-twin-server.service` runs the twin server;
 `deploy/v2x-twin-web.service` runs the web UI with `/etc/v2x-twin-web.env`
 (template: `deploy/twin-web.env.example`). `deploy/nginx-twin.conf` routes the
-protocol endpoints to the twin server, serves `/map-bundles/` from
-`/var/www/v2x-twin-map-bundles/`, `/catalog/` actor models from
-`/var/www/v2x-twin-catalog/` and `/drive-rigs/richmond.json` from the
-checkout, and proxies all remaining requests to the web UI. The web UI port is
-blocked on the external interface by the v2x-drive firewall.
+protocol endpoints to the twin server, MediaMTX playback to `/archive/`, and
+all remaining requests to the web UI. The web UI port is blocked on the
+external interface by the v2x-drive firewall.

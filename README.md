@@ -1,13 +1,13 @@
 # V2X Digital Twin
 
-Digital twin for the Richmond Field Station V2X deployment. The twin server owns simulation truth, mirrors detections from the local co-perception service, records detection history for replay, and serves drive control, truth frames, and camera feeds. The web UI picks a recorded window of up to 60 s from the camera archive and detection history, then simulates it in the browser: recorded detections become read-only actors, the pole-camera footage plays in sync, and the user adds their own actors. CARLA is not used by this repository or its runtime.
+Digital twin for the Richmond Field Station V2X deployment. The twin server owns simulation truth, mirrors detections from the local co-perception service, records detection history for replay, and serves drive control, truth frames, and camera feeds. The web UI is a detection review page: the past hour of detections on one timeline and, for any instant, the annotated footage of a pole camera (co-perception draws the boxes on the frames it detected on). CARLA is not used by this repository or its runtime.
 
 ## Architecture
 
 | Component | Responsibility | Default interface |
 |---|---|---|
 | `apps/twin-server` | Shared simulation world, drive commands, truth publication, 72-hour detection history/replay, local detection mirroring, camera relay | WS `:8765` at `/twin`, `/drive`, `/camera-feeds`; HTTP `:8090` at `/health`, `/streams/`, `/detections/` |
-| `apps/twin-web` | Operator UI (Next.js), two views. Pick: one row of detected events over the past hour across all cameras, colour-coded by kind (pedestrian, cyclist, car, truck/bus), with recording gaps hatched (wheel to zoom, click to scrub, drag to select ≤60 s). Clicking an event selects its window and shows two equal panes, the twin looking through the event's busiest camera (recorded actors sampled at the playhead) and that camera's footage, played in sync; keys 1–4 switch camera, Esc closes. Edit: scenario editor over the selected window, recorded actors replayed by an in-browser simulation alongside user-placed actors, archive footage in sync with play/stop | HTTP `:5199` |
+| `apps/twin-web` | Detection review (Next.js): one row of detected events over the past hour across all cameras, colour-coded by kind, with recording gaps hatched; the selected camera's annotated footage fills the page. Click an event to play it from just before its first detection on its busiest camera; click or drag the timeline to scrub (wheel zooms, ruler drag pans); Space plays/pauses, ←/→ step 1 s, 1–4 switch camera; `?at=<ISO>&camera=chN` opens a given instant | HTTP `:5199` |
 | `apps/dev-console` | Low-level `/drive` protocol console | Vite development server |
 
 `path2v2x/co-perception` is the only perception implementation. It is a separate repository and process.
@@ -16,7 +16,7 @@ The world session runs in live mode and is re-rooted onto a fresh engine session
 
 ## Vendored SimForge OSS packages
 
-The simulation engine, map, scenario, editor, and playback libraries are consumed as a frozen fork of `SimForgeinc/simforge-oss`: packed tarballs committed under `vendor/simforge-oss`, built from commit `c7277f44` and recorded in `vendor/simforge-oss/LOCK.json`. Nothing is fetched from a registry and nothing is contributed back upstream. The `@simforge-oss/*` package names are kept as-is.
+The twin server's simulation engine, map, and scenario libraries are consumed as a frozen fork of `SimForgeinc/simforge-oss`: packed tarballs committed under `vendor/simforge-oss`, built from commit `c7277f44` and recorded in `vendor/simforge-oss/LOCK.json`. Nothing is fetched from a registry and nothing is contributed back upstream. The `@simforge-oss/*` package names are kept as-is. The web UI uses none of them.
 
 To regenerate the archives (only needed to move the pin):
 
@@ -46,19 +46,11 @@ pnpm --dir apps/twin-server typecheck
 make help
 ```
 
-`apps/twin-web/.env.development` sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/map-bundles/`, `/catalog/`, `/drive-rigs/`, `/detections/` and `/archive/` to that host; in development, absolute archive URLs advertised by the host are rewritten to those same-origin paths. The UI talks to the twin only over HTTP (`/detections/replay-config`, `/detections/events`, `/detections/history`, `/archive/`); `?at=<ISO>` presets the playhead.
+`apps/twin-web/.env.development` sets `TWIN_DEV_UPSTREAM=https://twin.path2v2x.net`, which makes the Next.js dev server proxy `/detections/` and `/archive/` to that host; in development, absolute archive URLs advertised by the host are rewritten to those same-origin paths. The UI talks to the twin only over HTTP: `/detections/replay-config` (archive templates and offset), `/detections/events`, and the MediaMTX archive under `/archive/`. It has no build-time configuration.
 
-### Web UI configuration
+### Footage player
 
-`NEXT_PUBLIC_*` values are inlined at build time.
-
-| Variable | Purpose |
-|---|---|
-| `NEXT_PUBLIC_TWIN_MAP_MANIFEST_URL` | 3D map manifest, e.g. `/map-bundles/richmond-field-station/3d/manifest.json` |
-| `NEXT_PUBLIC_TWIN_MAP_LANES_URL` | lane topology index, e.g. `/map-bundles/richmond-field-station/topology-index.json.gz` |
-| `NEXT_PUBLIC_TWIN_CAMERA_RIGS_URL` | pole camera rig JSON, e.g. `/drive-rigs/richmond.json` |
-| `NEXT_PUBLIC_TWIN_HOME_URL` | external home link in the header |
-| `TWIN_DEV_UPSTREAM` | development only: proxy `/map-bundles/`, `/catalog/`, `/drive-rigs/`, `/detections/` and `/archive/` to this origin |
+`apps/twin-web/app/review/archive-player.ts` plays one camera through a single `<video>` element. Each footage window (a clicked event ± 5 s, at most 60 s, or 30 s from a timeline click) is one MediaMTX `/get?format=fmp4` request streamed into a shared MediaSource at its wall-clock position, so scrubbing inside loaded footage is a `currentTime` change and loading new footage keeps the last frame on screen. During playback the next 30 s is fetched 8 s before the loaded footage runs out; at most 4 minutes stay buffered. MediaMTX starts a clip at the keyframe before the requested second and stamps those pre-roll frames at the requested time, so media time maps exactly to wall time. `format=mp4` (non-fragmented) cannot be streamed into MediaSource.
 
 ### Twin server configuration
 
@@ -74,7 +66,8 @@ make help
 | `TWIN_HISTORY_DB` | `/var/lib/v2x-twin/detections.sqlite` | SQLite history database (`:memory:` is suitable for tests) |
 | `TWIN_HISTORY_RETENTION_HOURS` | `72` | history retention and replay window |
 | `TWIN_PUBLIC_HTTP_ORIGIN` | unset | public origin used to advertise absolute history URLs |
-| `TWIN_ARCHIVE_URL_TEMPLATE` | unset | archive MP4 template with `{channel}`, `{start}`, and `{duration}` placeholders |
+| `TWIN_ARCHIVE_URL_TEMPLATE` | unset | MediaMTX `/get` template with `{channel}`, `{start}`, and `{duration}`; must request `format=fmp4` |
+| `TWIN_ARCHIVE_LIST_URL_TEMPLATE` | unset | MediaMTX `/list` template with `{channel}`, `{start}`, and `{end}`, used to hatch recording gaps |
 | `TWIN_ARCHIVE_OFFSET_SECONDS` | `0` | offset added to replay clip start times to map detection timestamps to archive timestamps |
 | `TWIN_CAMERA_SOCKET_PATH` | unset | read live camera frames from the co-perception output socket instead of per-channel ffmpeg inputs |
 | `TWIN_CAMERA_URL_TEMPLATE` | `rtsp://127.0.0.1:8554/{channel}` | ffmpeg input URL template when no camera socket is set |
@@ -121,9 +114,9 @@ Otherwise `TWIN_CAMERA_URL_TEMPLATE` is substituted once per channel using `ch1`
 
 ffmpeg uses `-rtsp_transport tcp` for `rtsp://` URLs. If a live input exits or cannot produce frames, the server falls back to the recorded footage loop and retries the local live source after 10 s (doubling per consecutive frameless failure, capped at 2 min). Clients receive MJPEG at `/streams/ch1.mjpg` through `/streams/ch4.mjpg` or multiplexed binary frames at `/camera-feeds`. The web UI does not use these live feeds; it plays MediaMTX recordings through `/archive/`.
 
-## Pole camera rigs
+## Camera archive paths
 
-`config/drive-rigs/richmond.json` is the calibrated rig for RFS Mast 1 (signal feature 372): per channel heading, mount pitch, mount height, intrinsics and extrinsic corrections. The web UI's camera strip uses it to look through each pole camera. nginx serves it at `/drive-rigs/richmond.json` (see `deploy/nginx-twin.conf`), which is what `NEXT_PUBLIC_TWIN_CAMERA_RIGS_URL` points at; commit calibration changes to this file.
+MediaMTX on path-rfs (`/etc/v2x-camera/mediamtx.yml`) carries two streams per camera, both published by co-perception relays: `chN` is the annotated feed (`jpark-bbox-relay@`, boxes drawn on the frames co-perception detected on), which the twin and the drive dashboard show, and `chN_raw` is the clean pre-annotation backup (`jpark-raw-relay@`). Each MediaMTX path must have exactly one publisher. The drive repository's raw demux relay `v2x-camera-relay@` also targets `chN`; it is disabled on path-rfs. While it ran alongside the annotated relay (after the 2026-10-13 reboot), the two replaced each other every 2–3 s and cut the archive into ~2 s pieces alternating between raw and annotated footage.
 
 ## path-rfs deployment
 
@@ -138,7 +131,8 @@ TWIN_POLL_HZ=10
 TWIN_HISTORY_DB=/var/lib/v2x-twin/detections.sqlite
 TWIN_HISTORY_RETENTION_HOURS=72
 TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
-TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=mp4
+TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=fmp4
+TWIN_ARCHIVE_LIST_URL_TEMPLATE=https://twin.path2v2x.net/archive/list?path={channel}&start={start}&end={end}
 TWIN_ARCHIVE_OFFSET_SECONDS=6
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 TWIN_CAMERA_SOCKET_PATH=/tmp/coperception_output.sock
@@ -172,16 +166,9 @@ use are documented in [docs/perception-on-path-rfs.md](docs/perception-on-path-r
 
 `deploy/nginx-twin.conf` keeps the twin WebSockets on `:8865`, proxies health,
 camera streams, and `/detections/` to `:8190`, exposes MediaMTX playback under
-`/archive/`, serves browser map bundles (3D tiles, lane topology, signals) at
-`/map-bundles/` from `/var/www/v2x-twin-map-bundles/`, serves actor models
-(`/catalog/`, the content-hashed GLBs named in `@simforge-oss/asset-catalog`)
-from `/var/www/v2x-twin-catalog/`, serves the camera rig at
-`/drive-rigs/richmond.json`, and proxies everything else to the web UI on
-loopback `:5199`.
+`/archive/`, and proxies everything else to the web UI on loopback `:5199`.
 
 First-time setup: copy `deploy/twin-web.env.example` to `/etc/v2x-twin-web.env`,
-place the map bundles under `/var/www/v2x-twin-map-bundles/` and the catalog
-models under `/var/www/v2x-twin-catalog/`, symlink the vhost into
-`sites-enabled`, then run `scripts/deploy.sh --web`.
+symlink the vhost into `sites-enabled`, then run `scripts/deploy.sh --web`.
 
 Protocol details are in [docs/twin-protocol-v2.md](docs/twin-protocol-v2.md).
