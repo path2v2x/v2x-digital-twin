@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type CSSProperties, type RefObject } from "react";
+import { useLayoutEffect, useState, type CSSProperties, type RefObject } from "react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
 import type { ArchiveAccess } from "../footage/archive";
@@ -21,9 +21,12 @@ const MARGIN_PX = 12;
  */
 export function useSplitLayout(containerRef: RefObject<HTMLElement | null>, active: boolean, aspect: number, bottomReservePx: number): SplitLayout | null {
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
-  useEffect(() => {
+  // Measured before paint, so the footage pane mounts in the commit that opens the split rather than after the twin's next frame.
+  useLayoutEffect(() => {
     const container = containerRef.current;
     if (!container || !active) return;
+    const { width, height } = container.getBoundingClientRect();
+    setSize({ width, height });
     const observer = new ResizeObserver(([entry]) => {
       if (entry) setSize({ width: entry.contentRect.width, height: entry.contentRect.height });
     });
