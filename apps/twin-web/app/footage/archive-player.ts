@@ -2,6 +2,7 @@ import { archiveOffsetsFor, type ArchiveOffsets } from "./archive-offsets";
 import { avcCodecFromInit, DEFAULT_WINDOW_MS, footageUrl, windowAround, type ArchiveAccess } from "./archive";
 import type { TimeRange } from "../twin/camera-timeline";
 
+/** `loading`: the instant to show has not loaded yet, after a jump or because playback caught up with the loaded footage. */
 export type FootageStatus = "loading" | "ready" | "no-recording" | "error";
 
 /** Fetch the next window this long before playback reaches the end of loaded footage. */
@@ -108,6 +109,15 @@ export class ArchivePlayer {
     video.addEventListener("error", () => {
       this.setStatus("error", video.error?.message || "The footage could not be decoded");
     });
+    // Playback that ran past the loaded footage waits for the next window; `canplay` also covers a pause while waiting.
+    video.addEventListener("waiting", () => {
+      if (this.status === "ready" && this.targetMs === null) this.setStatus("loading");
+    });
+    for (const resumed of ["canplay", "playing"]) {
+      video.addEventListener(resumed, () => {
+        if (this.status === "loading" && this.targetMs === null) this.setStatus("ready");
+      });
+    }
   }
 
   /** Switch camera (or archive); returns true when a new, empty footage timeline was opened. */

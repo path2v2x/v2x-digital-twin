@@ -74,7 +74,7 @@ function CameraTile({ camera, rigLabel, active, alignable, onSelect, clock, arch
       )}
       data-camera-id={camera.id}
     >
-      <CameraFeed camera={camera} className="w-full" onDisplayState={setDisplay} clock={clock} archive={archive} />
+      <CameraFeed camera={camera} className="w-full" compact onDisplayState={setDisplay} clock={clock} archive={archive} />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-center gap-1.5 bg-gradient-to-t from-black/85 to-transparent px-1.5 pb-1 pt-4">
         <span
           aria-hidden="true"

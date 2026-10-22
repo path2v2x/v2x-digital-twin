@@ -5,6 +5,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { cn } from "@/app/lib/utils";
 import type { ArchiveAccess } from "./archive";
 import { ArchivePlayer, type FootageStatus } from "./archive-player";
+import { FootageLoading } from "./FootageLoading";
 import type { TimeRange } from "../twin/camera-timeline";
 
 /** Show footage at `ms`; `window` is the footage to load if it is not loaded yet. A new object is a new request. */
@@ -93,20 +94,18 @@ export function FootagePlayer({ channel, access, request, playing, onTime, onEnd
 
   const message = unavailableReason
     ?? (status.status === "no-recording" ? "No footage recorded at this time"
-      : status.status === "error" ? `Footage could not play: ${status.detail ?? "unknown error"}`
-        : status.status === "loading" ? "Loading footage…" : null);
+      : status.status === "error" ? `Footage could not play: ${status.detail ?? "unknown error"}` : null);
 
   return (
     <div className="absolute inset-0 bg-black" data-testid="footage" data-status={unavailableReason ? "unavailable" : status.status}>
       <video ref={videoRef} className="absolute inset-0 size-full object-contain" muted playsInline aria-label={`${channel.toUpperCase()} footage`} data-testid="footage-video" />
       <canvas ref={holdRef} aria-hidden="true" className={cn("pointer-events-none absolute inset-0 size-full object-contain", holding ? "visible" : "invisible")} />
+      {status.status === "loading" && !unavailableReason ? <FootageLoading /> : null}
       <div
         role="status"
         className={cn(
           "pointer-events-none absolute left-4 top-4 border border-border bg-card/90 px-3 py-1.5 text-sm transition-opacity",
           message ? "opacity-100" : "opacity-0",
-          // Short loads finish before the notice appears, so quick scrubs stay quiet.
-          message && status.status === "loading" && !unavailableReason ? "delay-300" : "delay-0",
           status.status === "error" || unavailableReason ? "text-red-400" : "text-foreground",
         )}
         data-testid="footage-status"

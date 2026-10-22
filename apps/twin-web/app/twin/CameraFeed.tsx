@@ -7,6 +7,7 @@ import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 import { cn } from "@/app/lib/utils";
 import { DEFAULT_WINDOW_MS, windowAround, type ArchiveAccess } from "../footage/archive";
 import { ArchivePlayer, type FootageStatus } from "../footage/archive-player";
+import { FootageLoading } from "../footage/FootageLoading";
 
 export type FeedDisplayState = "starting" | "replay" | "paused" | "no-recording";
 
@@ -23,15 +24,17 @@ export interface CameraFeedProps {
   clock: ArchiveClock | null;
   archive: ArchiveAccess | null;
   className?: string;
+  /** Thumbnail-sized: the loading indicator drops its label. */
+  compact?: boolean;
   onDisplayState?: (state: FeedDisplayState) => void;
 }
 
 /** The archived recording of one camera at the given clock. */
-export function CameraFeed({ camera, clock, archive, className, onDisplayState }: CameraFeedProps) {
+export function CameraFeed({ camera, clock, archive, className, compact = false, onDisplayState }: CameraFeedProps) {
   return (
     <div className={cn("relative overflow-hidden bg-black", className)} style={{ aspectRatio: `${camera.intrinsics.width} / ${camera.intrinsics.height}` }}>
       {clock && archive ? (
-        <ArchiveFeed camera={camera} clock={clock} archive={archive} onDisplayState={onDisplayState} />
+        <ArchiveFeed camera={camera} clock={clock} archive={archive} compact={compact} onDisplayState={onDisplayState} />
       ) : (
         <FeedMessage title="No recording" />
       )}
@@ -44,7 +47,13 @@ const HELD_WINDOW_MS = 4_000;
 /** While playing, the footage is moved back to the clock once they drift further apart than this. */
 const DRIFT_LIMIT_MS = 500;
 
-function ArchiveFeed({ camera, clock, archive, onDisplayState }: { camera: PoleCamera; clock: ArchiveClock; archive: ArchiveAccess; onDisplayState?: (state: FeedDisplayState) => void }) {
+function ArchiveFeed({ camera, clock, archive, compact, onDisplayState }: {
+  camera: PoleCamera;
+  clock: ArchiveClock;
+  archive: ArchiveAccess;
+  compact: boolean;
+  onDisplayState?: (state: FeedDisplayState) => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<ArchivePlayer | null>(null);
   const [status, setStatus] = useState<FootageStatus>("loading");
@@ -96,6 +105,7 @@ function ArchiveFeed({ camera, clock, archive, onDisplayState }: { camera: PoleC
   return (
     <>
       <video ref={videoRef} className="block h-full w-full object-cover" muted playsInline data-archive-camera={camera.id} />
+      {status === "loading" ? <FootageLoading compact={compact} /> : null}
       {displayState === "no-recording" ? <FeedMessage title="No recording" /> : null}
     </>
   );
