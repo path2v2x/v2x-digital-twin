@@ -3,11 +3,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/app/lib/utils";
-import { eventFootageWindow, LEAD_IN_MS, windowAround } from "./archive";
-import type { DetectionEvent } from "./detection-events";
+import { eventFootageWindow, LEAD_IN_MS, windowAround } from "../footage/archive";
+import { FootagePlayer, type FootageRequest } from "../footage/FootagePlayer";
+import type { DetectionEvent } from "../twin/detection-events";
+import { DETECTION_EVENTS_URL, useReplayConfig } from "../twin/replay-config";
 import { EventTimeline } from "./EventTimeline";
-import { FootagePlayer, type FootageRequest } from "./FootagePlayer";
-import { DETECTION_EVENTS_URL, useArchiveAccess } from "./replay-config";
 
 /** The four pole cameras on the Richmond Field Station mast. */
 const CAMERAS = ["ch1", "ch2", "ch3", "ch4"];
@@ -19,7 +19,8 @@ const ARROW_STEP_MS = 1_000;
 const START_BEFORE_NOW_MS = 60_000;
 
 export function DetectionReview() {
-  const archive = useArchiveAccess();
+  const replay = useReplayConfig();
+  const access = replay.config?.archive ?? null;
   // The page is prerendered at build time, so anything clock-dependent waits for the browser's clock.
   const [nowMs, setNowMs] = useState<number | null>(null);
   const [camera, setCamera] = useState(CAMERAS[0]!);
@@ -118,9 +119,9 @@ export function DetectionReview() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [seek, switchCamera]);
 
-  const unavailableReason = archive.error
-    ? `Recordings are unavailable: ${archive.error}`
-    : archive.loaded && !archive.access ? "No footage archive is configured on the server" : null;
+  const unavailableReason = replay.error
+    ? `Recordings are unavailable: ${replay.error}`
+    : replay.config && !access ? "No footage archive is configured on the server" : null;
 
   return (
     <div className="flex h-svh flex-col bg-background text-foreground">
@@ -154,7 +155,7 @@ export function DetectionReview() {
       <main className="relative min-h-0 flex-1">
         <FootagePlayer
           channel={camera}
-          access={archive.access}
+          access={access}
           request={request}
           playing={playing}
           onTime={setPlayheadMs}
@@ -170,8 +171,8 @@ export function DetectionReview() {
           earliestMs={nowMs - TIMELINE_SPAN_MS}
           eventsUrl={DETECTION_EVENTS_URL}
           cameraIds={CAMERAS}
-          archiveListUrlTemplate={archive.access?.listUrlTemplate ?? null}
-          archiveOffsetSeconds={archive.access?.offsetSeconds ?? 0}
+          archiveListUrlTemplate={access?.listUrlTemplate ?? null}
+          archiveOffsetSeconds={access?.offsetSeconds ?? 0}
           playheadMs={playheadMs}
           onScrub={scrub}
           onSeek={seek}

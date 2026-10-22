@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState, type JSX, type PointerEvent as Re
 import { Bike, CarFront, Pause, PersonStanding, Play, Truck, type LucideIcon } from "lucide-react";
 
 import { cn } from "@/app/lib/utils";
-import { archiveListUrl, parseArchiveSegments } from "./archive";
-import { clampView, formatClock, MINUTE_MS, msToX, pan, rulerTicks, SECOND_MS, uncoveredRanges, xToMs, zoomAround, type TimeRange } from "./camera-timeline";
-import { describeEvent, EVENT_KINDS, EVENT_STYLE, parseDetectionEvents, type DetectionEvent, type EventKind } from "./detection-events";
+import { archiveListUrl, parseArchiveSegments } from "../footage/archive";
+import { clampView, formatClock, MINUTE_MS, msToX, pan, rulerTicks, SECOND_MS, uncoveredRanges, xToMs, zoomAround, type TimeRange } from "../twin/camera-timeline";
+import { describeEvent, EVENT_KINDS, EVENT_STYLE, parseDetectionEvents, type DetectionEvent, type EventKind } from "../twin/detection-events";
 
 export interface EventTimelineProps {
   /** Latest instant (right bound). */

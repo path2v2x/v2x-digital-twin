@@ -1,5 +1,7 @@
-import { DetectionReview } from "./review/DetectionReview";
+"use client";
+
+import { TwinApp } from "./twin/TwinApp";
 
 export default function Page() {
-  return <DetectionReview />;
+  return <TwinApp />;
 }
