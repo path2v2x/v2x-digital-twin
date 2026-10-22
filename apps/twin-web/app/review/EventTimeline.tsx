@@ -20,8 +20,10 @@ export interface EventTimelineProps {
   playheadMs: number;
   /** While the playhead is dragged: the instant under the pointer. */
   onScrub: (ms: number) => void;
-  /** A click or the end of a drag: the instant under the pointer, and the detection block clicked, if any. */
-  onSeek: (ms: number, event: DetectionEvent | null) => void;
+  /** A click outside detections, or the end of a drag: the instant under the pointer. */
+  onSeek: (ms: number) => void;
+  /** A click on a detection block. */
+  onEventSelect: (event: DetectionEvent) => void;
   playing: boolean;
   onPlayPause: () => void;
   focusedEventId: string | null;
@@ -40,7 +42,8 @@ const EVENTS_DEBOUNCE_MS = 150;
 const ARCHIVE_DEBOUNCE_MS = 300;
 /** Events are fetched for the view plus this share of its span on each side, so panning shows them at once. */
 const EVENTS_PAD_FRACTION = 0.25;
-const MIN_EVENT_PX = 10;
+/** Blocks span exactly their detections; this only keeps the shortest ones visible on a zoomed-out view. */
+const MIN_EVENT_PX = 2;
 /** Widths from which a block shows its icon, then its object count. */
 const ICON_MIN_PX = 20;
 const COUNT_MIN_PX = 44;
@@ -48,7 +51,7 @@ const EVENT_ICONS: Readonly<Record<EventKind, LucideIcon>> = { pedestrian: Perso
 const NO_RECORDING_BACKGROUND =
   "repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.22) 0 1px, transparent 1px 6px), hsl(var(--background) / 0.45)";
 
-/** One bar of detected events over all cameras: click or drag anywhere, detections included, to move the playhead there. */
+/** One bar of detected events over all cameras: click a detection to play it from its start, click or drag anywhere else to move the playhead there. */
 export function EventTimeline({
   nowMs,
   earliestMs,
@@ -59,6 +62,7 @@ export function EventTimeline({
   playheadMs,
   onScrub,
   onSeek,
+  onEventSelect,
   playing,
   onPlayPause,
   focusedEventId,
@@ -254,8 +258,9 @@ export function EventTimeline({
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     if (drag.kind !== "scrub") return;
-    const clicked = !drag.moved && drag.eventId ? eventsById.get(drag.eventId) ?? null : null;
-    onSeek(clampToBounds(xToMs(trackX(event), view, width)), clicked);
+    const clicked = !drag.moved && drag.eventId ? eventsById.get(drag.eventId) : undefined;
+    if (clicked) onEventSelect(clicked);
+    else onSeek(clampToBounds(xToMs(trackX(event), view, width)));
   };
 
   const onPointerCancel = () => {
@@ -286,7 +291,7 @@ export function EventTimeline({
         </div>
         {eventsError ? <span role="alert" className="max-w-64 truncate text-red-400" title={eventsError}>{eventsError}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="hidden text-muted-foreground lg:inline">Click or drag to move the playhead</span>
+          <span className="hidden text-muted-foreground lg:inline">Click a detection to play it, or click or drag to move the playhead</span>
           {span < bounds.endMs - bounds.startMs ? (
             <button type="button" className="h-7 px-2 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setView(bounds)} title="Show the whole hour">
               Whole hour

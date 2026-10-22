@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { cn } from "@/app/lib/utils";
-import { eventFootageWindow, LEAD_IN_MS, windowAround } from "../footage/archive";
+import { eventFootageWindow, windowAround } from "../footage/archive";
 import { FootagePlayer, type FootageRequest } from "../footage/FootagePlayer";
 import type { DetectionEvent } from "../twin/detection-events";
 import { DETECTION_EVENTS_URL, useReplayConfig } from "../twin/replay-config";
@@ -43,13 +43,14 @@ export function DetectionReview() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // The page opens paused on the latest detection, just before it starts, on the camera that saw most of it.
-  const openEvent = useCallback((event: DetectionEvent) => {
-    const ms = event.startMs - LEAD_IN_MS;
-    setCamera((current) => event.cameras[0] ?? current);
+  // A detection from its first frame, on a camera that saw it (the current one when it did). Clicking one plays it.
+  const openEvent = useCallback((event: DetectionEvent, play: boolean) => {
+    resumeAfterDragRef.current = null;
+    setCamera((current) => (event.cameras.includes(current) ? current : event.cameras[0] ?? current));
     setFocusedEventId(event.id);
-    setPlayheadMs(ms);
-    setRequest({ ms, window: eventFootageWindow(event) });
+    setPlayheadMs(event.startMs);
+    setRequest({ ms: event.startMs, window: eventFootageWindow(event) });
+    setPlaying(play);
   }, []);
 
   // Dragging pauses playback; footage follows once the pointer settles.
@@ -60,16 +61,14 @@ export function DetectionReview() {
     setRequest({ ms });
   }, []);
 
-  // A click, the end of a drag or an arrow key: show exactly `ms` at once and keep playing if it was.
-  // A clicked detection the current camera did not see switches to a camera that did.
-  const seek = useCallback((ms: number, clicked: DetectionEvent | null = null) => {
+  // A click outside detections, the end of a drag or an arrow key: show exactly `ms` at once and keep playing if it was.
+  const seek = useCallback((ms: number) => {
     const resume = resumeAfterDragRef.current;
     resumeAfterDragRef.current = null;
     if (resume !== null) setPlaying(resume);
-    if (clicked) setCamera((current) => (clicked.cameras.includes(current) ? current : clicked.cameras[0] ?? current));
     setPlayheadMs(ms);
     setRequest({ ms, window: windowAround(ms) });
-    setFocusedEventId(clicked?.id ?? visibleEvents.find((event) => event.startMs <= ms && ms <= event.endMs)?.id ?? null);
+    setFocusedEventId(visibleEvents.find((event) => event.startMs <= ms && ms <= event.endMs)?.id ?? null);
   }, [visibleEvents]);
 
   const switchCamera = useCallback((id: string) => {
@@ -91,7 +90,7 @@ export function DetectionReview() {
       setPlayheadMs(at);
       setRequest({ ms: at });
     } else if (latest) {
-      openEvent(latest);
+      openEvent(latest, false);
     } else {
       setRequest({ ms: playheadRef.current });
     }
@@ -176,6 +175,7 @@ export function DetectionReview() {
           playheadMs={playheadMs}
           onScrub={scrub}
           onSeek={seek}
+          onEventSelect={(event) => openEvent(event, true)}
           playing={playing}
           onPlayPause={() => setPlaying((current) => !current)}
           focusedEventId={focusedEventId}

@@ -409,16 +409,17 @@ function TwinSurface({ map }: { map: ScenarioMapEntry }) {
   // Footage review stops at the end of the selection the playhead is in, else at now.
   const previewStopRef = useRef(Number.POSITIVE_INFINITY);
 
-  // An event click reviews it at the clicked instant: its window is selected for Simulate and its busiest camera opens beside the twin.
-  const selectEvent = useCallback((event: DetectionEvent, clickMs: number) => {
-    const window = eventWindow(event, clickMs, MAX_WINDOW_MS, timelineBounds);
+  // A detection click plays it from its first detection: its span is selected for Simulate and its busiest camera opens beside the twin.
+  const selectEvent = useCallback((event: DetectionEvent) => {
+    const window = eventWindow(event, MIN_WINDOW_MS, MAX_WINDOW_MS, nowMs);
     const camera = event.cameras.map((id) => stripCameras.find((entry) => entry.camera.id === id)).find((entry) => entry !== undefined) ?? stripCameras[0];
-    previewStopRef.current = previewStopMs(clickMs, window, nowMs);
+    previewStopRef.current = previewStopMs(event.startMs, window, nowMs);
     setSelection(window);
-    setPlayheadMs(clickMs);
+    setPlayheadMs(event.startMs);
     setFocus(camera ? { event, cameraId: camera.camera.id } : null);
     if (camera?.alignable) lookThrough.engage(camera.key);
-  }, [lookThrough, nowMs, stripCameras, timelineBounds]);
+    setPreviewPlaying(true);
+  }, [lookThrough, nowMs, stripCameras]);
 
   const focusCamera = useCallback((cameraId: string) => {
     const camera = stripCameras.find((entry) => entry.camera.id === cameraId);

@@ -23,9 +23,6 @@ export const EVENT_STYLE: Readonly<Record<EventKind, { label: string; plural: st
   large_vehicle: { label: "Truck / bus", plural: "Trucks / buses", color: "#c084fc" },
 };
 
-/** Footage kept on each side of an event when it becomes the simulation window. */
-export const EVENT_PADDING_MS = 2_000;
-
 export function parseDetectionEvents(body: unknown): DetectionEvent[] {
   const items = (body as { events?: unknown } | null)?.events;
   if (!Array.isArray(items)) throw new Error("Malformed events response");
@@ -51,21 +48,15 @@ export function parseDetectionEvents(body: unknown): DetectionEvent[] {
 }
 
 /**
- * The simulation window for a clicked event: the whole event plus padding when
- * it fits in `maxMs`, otherwise `maxMs` centred on the click and kept inside the
- * padded event. Always inside `bounds`.
+ * The simulation window for a clicked event: the event itself from its first
+ * detection, at most `maxMs` long and at least `minMs` (so a very short
+ * detection can still be simulated), never past `nowMs`. A detection that
+ * started before the timeline's hour keeps its start: history and footage
+ * reach back further than the timeline shows.
  */
-export function eventWindow(event: DetectionEvent, clickMs: number, maxMs: number, bounds: TimeRange): TimeRange {
-  const paddedStart = event.startMs - EVENT_PADDING_MS;
-  const paddedEnd = event.endMs + EVENT_PADDING_MS;
-  let startMs = paddedStart;
-  let endMs = paddedEnd;
-  if (endMs - startMs > maxMs) {
-    startMs = Math.min(Math.max(clickMs - maxMs / 2, paddedStart), paddedEnd - maxMs);
-    endMs = startMs + maxMs;
-  }
-  const shift = Math.max(0, bounds.startMs - startMs) - Math.max(0, endMs - bounds.endMs);
-  return { startMs: Math.max(bounds.startMs, startMs + shift), endMs: Math.min(bounds.endMs, endMs + shift) };
+export function eventWindow(event: DetectionEvent, minMs: number, maxMs: number, nowMs: number): TimeRange {
+  const endMs = Math.min(nowMs, Math.max(event.startMs + minMs, Math.min(event.endMs, event.startMs + maxMs)));
+  return { startMs: Math.min(event.startMs, endMs - minMs), endMs };
 }
 
 export function describeEvent(event: DetectionEvent): string {

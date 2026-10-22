@@ -6,20 +6,23 @@ const bounds = { startMs: 0, endMs: 1_000_000 };
 const event = (id: string, startMs: number, endMs: number): DetectionEvent => ({ id, kind: 'pedestrian', startMs, endMs, objects: 1, detections: 10, cameras: ['ch3'] });
 
 describe('eventWindow', () => {
-  it('takes a short event whole, padded by 2 s', () => {
-    expect(eventWindow(event('a', 100_000, 120_000), 110_000, 60_000, bounds)).toEqual({ startMs: 98_000, endMs: 122_000 });
+  const [min, max, now] = [2_000, 60_000, 1_000_000];
+
+  it('takes an event exactly, with no padding', () => {
+    expect(eventWindow(event('a', 100_000, 120_000), min, max, now)).toEqual({ startMs: 100_000, endMs: 120_000 });
   });
 
-  it('centres the maximum window on the click inside a long event, without leaving it', () => {
-    const long = event('b', 100_000, 400_000);
-    expect(eventWindow(long, 250_000, 60_000, bounds)).toEqual({ startMs: 220_000, endMs: 280_000 });
-    expect(eventWindow(long, 101_000, 60_000, bounds)).toEqual({ startMs: 98_000, endMs: 158_000 });
-    expect(eventWindow(long, 399_000, 60_000, bounds)).toEqual({ startMs: 342_000, endMs: 402_000 });
+  it('takes the first maximum window of a long event, from its start', () => {
+    expect(eventWindow(event('b', 100_000, 400_000), min, max, now)).toEqual({ startMs: 100_000, endMs: 160_000 });
   });
 
-  it('shifts inward rather than cutting the window at the retention and live edges', () => {
-    expect(eventWindow(event('c', 500, 10_000), 1_000, 60_000, bounds)).toEqual({ startMs: 0, endMs: 13_500 });
-    expect(eventWindow(event('d', 990_000, 999_500), 995_000, 60_000, bounds)).toEqual({ startMs: 986_500, endMs: 1_000_000 });
+  it('extends a detection shorter than the minimum window past its end', () => {
+    expect(eventWindow(event('c', 100_000, 100_800), min, max, now)).toEqual({ startMs: 100_000, endMs: 102_000 });
+  });
+
+  it('keeps the start of a detection that began before the timeline, and never passes now', () => {
+    expect(eventWindow(event('d', -5_000, 10_000), min, max, now)).toEqual({ startMs: -5_000, endMs: 10_000 });
+    expect(eventWindow(event('e', 999_500, 999_800), min, max, now)).toEqual({ startMs: 998_000, endMs: 1_000_000 });
   });
 });
 

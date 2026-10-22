@@ -10,14 +10,10 @@ export interface ArchiveAccess {
   offsetSeconds: number;
 }
 
-/** Footage loaded from a timeline click when no event says otherwise. */
+/** Footage loaded from a timeline click, and at least this much from a detection's start. */
 export const DEFAULT_WINDOW_MS = 30_000;
 /** Longest single footage request. */
 export const MAX_WINDOW_MS = 60_000;
-/** Footage kept after the detection the page opens on. */
-export const EVENT_PADDING_MS = 5_000;
-/** The page opens this long before the latest detection starts. */
-export const LEAD_IN_MS = 2_000;
 
 const SECOND = 1_000;
 
@@ -30,11 +26,11 @@ export function windowAround(ms: number, lengthMs = DEFAULT_WINDOW_MS): TimeRang
   return { startMs, endMs: startMs + lengthMs };
 }
 
-/** The opening detection from `LEAD_IN_MS` before it to `EVENT_PADDING_MS` after, in whole seconds, at most `MAX_WINDOW_MS`. */
+/** A detection from its first frame: the whole detection, at least `DEFAULT_WINDOW_MS` and at most `MAX_WINDOW_MS`. */
 export function eventFootageWindow(event: DetectionEvent): TimeRange {
-  const startMs = Math.floor((event.startMs - LEAD_IN_MS) / SECOND) * SECOND;
-  const endMs = Math.ceil((event.endMs + EVENT_PADDING_MS) / SECOND) * SECOND;
-  return { startMs, endMs: Math.min(endMs, startMs + MAX_WINDOW_MS) };
+  const startMs = Math.floor(event.startMs / SECOND) * SECOND;
+  const lengthMs = Math.ceil((event.endMs - startMs) / SECOND) * SECOND;
+  return windowAround(event.startMs, Math.min(MAX_WINDOW_MS, Math.max(DEFAULT_WINDOW_MS, lengthMs)));
 }
 
 function archiveIso(ms: number, offsetSeconds: number): string {
