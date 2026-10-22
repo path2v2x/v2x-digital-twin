@@ -14,9 +14,9 @@ export interface ArchiveAccess {
 export const DEFAULT_WINDOW_MS = 30_000;
 /** Longest single footage request. */
 export const MAX_WINDOW_MS = 60_000;
-/** Footage kept after a clicked event ends. */
+/** Footage kept after the detection the page opens on. */
 export const EVENT_PADDING_MS = 5_000;
-/** A clicked event plays from this long before its first detection. */
+/** The page opens this long before the latest detection starts. */
 export const LEAD_IN_MS = 2_000;
 
 const SECOND = 1_000;
@@ -30,7 +30,7 @@ export function windowAround(ms: number, lengthMs = DEFAULT_WINDOW_MS): TimeRang
   return { startMs, endMs: startMs + lengthMs };
 }
 
-/** A clicked event from `LEAD_IN_MS` before it to `EVENT_PADDING_MS` after, in whole seconds, at most `MAX_WINDOW_MS`. */
+/** The opening detection from `LEAD_IN_MS` before it to `EVENT_PADDING_MS` after, in whole seconds, at most `MAX_WINDOW_MS`. */
 export function eventFootageWindow(event: DetectionEvent): TimeRange {
   const startMs = Math.floor((event.startMs - LEAD_IN_MS) / SECOND) * SECOND;
   const endMs = Math.ceil((event.endMs + EVENT_PADDING_MS) / SECOND) * SECOND;

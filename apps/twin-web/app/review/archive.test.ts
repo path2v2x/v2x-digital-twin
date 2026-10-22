@@ -7,7 +7,7 @@ const at = (iso: string) => Date.parse(iso);
 const event = (startIso: string, endIso: string): DetectionEvent => ({ id: 'e', kind: 'vehicle', startMs: at(startIso), endMs: at(endIso), objects: 1, detections: 20, cameras: ['ch4'] });
 
 describe('footage windows', () => {
-  it('loads a clicked event from 2 s before it to 5 s after, on whole seconds', () => {
+  it('loads a detection from 2 s before it to 5 s after, on whole seconds', () => {
     expect(eventFootageWindow(event('2026-10-21T21:53:15.000Z', '2026-10-21T21:53:23.700Z')))
       .toEqual({ startMs: at('2026-10-21T21:53:13Z'), endMs: at('2026-10-21T21:53:29Z') });
   });

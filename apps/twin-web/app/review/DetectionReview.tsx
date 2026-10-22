@@ -31,6 +31,10 @@ export function DetectionReview() {
   const openedRef = useRef(false);
   const playheadRef = useRef(playheadMs);
   playheadRef.current = playheadMs;
+  const playingRef = useRef(playing);
+  playingRef.current = playing;
+  /** Whether playback resumes when the drag in progress ends; null when not dragging. */
+  const resumeAfterDragRef = useRef<boolean | null>(null);
 
   useEffect(() => {
     setNowMs(Date.now());
@@ -38,21 +42,33 @@ export function DetectionReview() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const openEvent = useCallback((event: DetectionEvent, play: boolean) => {
+  // The page opens paused on the latest detection, just before it starts, on the camera that saw most of it.
+  const openEvent = useCallback((event: DetectionEvent) => {
     const ms = event.startMs - LEAD_IN_MS;
     setCamera((current) => event.cameras[0] ?? current);
     setFocusedEventId(event.id);
     setPlayheadMs(ms);
     setRequest({ ms, window: eventFootageWindow(event) });
-    setPlaying(play);
   }, []);
 
-  // A drag waits for the pointer to settle before loading new footage; a click or key press loads at once.
-  const scrub = useCallback((ms: number, dragging: boolean) => {
+  // Dragging pauses playback; footage follows once the pointer settles.
+  const scrub = useCallback((ms: number) => {
+    resumeAfterDragRef.current ??= playingRef.current;
     setPlaying(false);
     setPlayheadMs(ms);
-    setRequest(dragging ? { ms } : { ms, window: windowAround(ms) });
-    setFocusedEventId(visibleEvents.find((event) => event.startMs <= ms && ms <= event.endMs)?.id ?? null);
+    setRequest({ ms });
+  }, []);
+
+  // A click, the end of a drag or an arrow key: show exactly `ms` at once and keep playing if it was.
+  // A clicked detection the current camera did not see switches to a camera that did.
+  const seek = useCallback((ms: number, clicked: DetectionEvent | null = null) => {
+    const resume = resumeAfterDragRef.current;
+    resumeAfterDragRef.current = null;
+    if (resume !== null) setPlaying(resume);
+    if (clicked) setCamera((current) => (clicked.cameras.includes(current) ? current : clicked.cameras[0] ?? current));
+    setPlayheadMs(ms);
+    setRequest({ ms, window: windowAround(ms) });
+    setFocusedEventId(clicked?.id ?? visibleEvents.find((event) => event.startMs <= ms && ms <= event.endMs)?.id ?? null);
   }, [visibleEvents]);
 
   const switchCamera = useCallback((id: string) => {
@@ -74,7 +90,7 @@ export function DetectionReview() {
       setPlayheadMs(at);
       setRequest({ ms: at });
     } else if (latest) {
-      openEvent(latest, false);
+      openEvent(latest);
     } else {
       setRequest({ ms: playheadRef.current });
     }
@@ -95,12 +111,12 @@ export function DetectionReview() {
         switchCamera(CAMERAS[Number(event.key) - 1]!);
       } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
         event.preventDefault();
-        scrub(playheadRef.current + (event.key === "ArrowLeft" ? -ARROW_STEP_MS : ARROW_STEP_MS), false);
+        seek(playheadRef.current + (event.key === "ArrowLeft" ? -ARROW_STEP_MS : ARROW_STEP_MS));
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [scrub, switchCamera]);
+  }, [seek, switchCamera]);
 
   const unavailableReason = archive.error
     ? `Recordings are unavailable: ${archive.error}`
@@ -157,11 +173,11 @@ export function DetectionReview() {
           archiveListUrlTemplate={archive.access?.listUrlTemplate ?? null}
           archiveOffsetSeconds={archive.access?.offsetSeconds ?? 0}
           playheadMs={playheadMs}
-          onPlayheadChange={scrub}
+          onScrub={scrub}
+          onSeek={seek}
           playing={playing}
           onPlayPause={() => setPlaying((current) => !current)}
           focusedEventId={focusedEventId}
-          onEventSelect={(event) => openEvent(event, true)}
           onVisibleEventsChange={onVisibleEventsChange}
         />
       )}

@@ -18,12 +18,13 @@ export interface EventTimelineProps {
   archiveListUrlTemplate: string | null;
   archiveOffsetSeconds: number;
   playheadMs: number;
-  /** The user clicked (`dragging` false) or dragged the playhead to `ms`. */
-  onPlayheadChange: (ms: number, dragging: boolean) => void;
+  /** While the playhead is dragged: the instant under the pointer. */
+  onScrub: (ms: number) => void;
+  /** A click or the end of a drag: the instant under the pointer, and the detection block clicked, if any. */
+  onSeek: (ms: number, event: DetectionEvent | null) => void;
   playing: boolean;
   onPlayPause: () => void;
   focusedEventId: string | null;
-  onEventSelect: (event: DetectionEvent) => void;
   onVisibleEventsChange: (events: readonly DetectionEvent[]) => void;
   className?: string;
 }
@@ -47,7 +48,7 @@ const EVENT_ICONS: Readonly<Record<EventKind, LucideIcon>> = { pedestrian: Perso
 const NO_RECORDING_BACKGROUND =
   "repeating-linear-gradient(135deg, hsl(var(--muted-foreground) / 0.22) 0 1px, transparent 1px 6px), hsl(var(--background) / 0.45)";
 
-/** One bar of detected events over all cameras: click an event to play it, click or drag anywhere to scrub. */
+/** One bar of detected events over all cameras: click or drag anywhere, detections included, to move the playhead there. */
 export function EventTimeline({
   nowMs,
   earliestMs,
@@ -56,11 +57,11 @@ export function EventTimeline({
   archiveListUrlTemplate,
   archiveOffsetSeconds,
   playheadMs,
-  onPlayheadChange,
+  onScrub,
+  onSeek,
   playing,
   onPlayPause,
   focusedEventId,
-  onEventSelect,
   onVisibleEventsChange,
   className,
 }: EventTimelineProps): JSX.Element {
@@ -70,7 +71,6 @@ export function EventTimeline({
   const [loaded, setLoaded] = useState<{ range: TimeRange; events: DetectionEvent[] } | null>(null);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const [gaps, setGaps] = useState<TimeRange[]>([]);
-  const [overEvent, setOverEvent] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<Drag | null>(null);
   const widthRef = useRef(0);
@@ -90,7 +90,7 @@ export function EventTimeline({
     });
   }, [bounds]);
 
-  // Keep the playhead on screen when it moves from outside (an event click, playback).
+  // Keep the playhead on screen when it moves from outside (playback, arrow keys, opening on a detection).
   useEffect(() => {
     setView((current) => (playheadMs >= current.startMs && playheadMs <= current.endMs
       ? current
@@ -237,17 +237,14 @@ export function EventTimeline({
   const onPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     const x = trackX(event);
-    if (!drag || drag.pointerId !== event.pointerId) {
-      if (event.currentTarget.dataset.timelineBar !== undefined) setOverEvent(eventIdAt(event) !== null);
-      return;
-    }
+    if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.moved && Math.abs(x - drag.originX) < DRAG_THRESHOLD_PX) return;
     drag.moved = true;
     if (drag.kind === "pan") {
       const originSpan = drag.originView.endMs - drag.originView.startMs;
       setView(pan(drag.originView, -(x - drag.originX) / Math.max(1, width) * originSpan, bounds));
     } else {
-      onPlayheadChange(clampToBounds(xToMs(x, view, width)), true);
+      onScrub(clampToBounds(xToMs(x, view, width)));
     }
   };
 
@@ -256,10 +253,9 @@ export function EventTimeline({
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    if (drag.moved || drag.kind !== "scrub") return;
-    const clicked = drag.eventId ? eventsById.get(drag.eventId) : undefined;
-    if (clicked) onEventSelect(clicked);
-    else onPlayheadChange(clampToBounds(xToMs(trackX(event), view, width)), false);
+    if (drag.kind !== "scrub") return;
+    const clicked = !drag.moved && drag.eventId ? eventsById.get(drag.eventId) ?? null : null;
+    onSeek(clampToBounds(xToMs(trackX(event), view, width)), clicked);
   };
 
   const onPointerCancel = () => {
@@ -290,7 +286,7 @@ export function EventTimeline({
         </div>
         {eventsError ? <span role="alert" className="max-w-64 truncate text-red-400" title={eventsError}>{eventsError}</span> : null}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <span className="hidden text-muted-foreground lg:inline">Click a detection to play it, or drag to scrub</span>
+          <span className="hidden text-muted-foreground lg:inline">Click or drag to move the playhead</span>
           {span < bounds.endMs - bounds.startMs ? (
             <button type="button" className="h-7 px-2 text-muted-foreground hover:bg-muted hover:text-foreground" onClick={() => setView(bounds)} title="Show the whole hour">
               Whole hour
@@ -319,14 +315,11 @@ export function EventTimeline({
         </div>
 
         <div
-          className="relative h-14 border border-border bg-background/60"
-          style={{ cursor: overEvent ? "pointer" : "col-resize" }}
+          className="relative h-14 cursor-col-resize border border-border bg-background/60"
           onPointerDown={onBarPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerCancel}
-          onPointerLeave={() => setOverEvent(false)}
-          data-timeline-bar=""
           data-testid="timeline-bar"
         >
           {gaps.map((gap) => {

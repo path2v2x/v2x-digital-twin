@@ -95,6 +95,8 @@ export class ArchivePlayer {
     this.exhaustedAtMs = null;
     window.clearTimeout(this.settleTimer);
     if (this.seekToTarget()) return;
+    // Hold the current frame rather than play on from the old instant; playback resumes at the target once it loads.
+    this.video.pause();
     this.setStatus("loading");
     const load = this.load;
     if (load && load.span.startMs <= ms && ms < load.span.endMs) return;
