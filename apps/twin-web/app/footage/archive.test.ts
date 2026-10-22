@@ -23,10 +23,10 @@ describe('footage windows', () => {
     expect(windowAround(at('2026-10-21T21:00:10.900Z'))).toEqual({ startMs: at('2026-10-21T21:00:10Z'), endMs: at('2026-10-21T21:00:40Z') });
   });
 
-  it('requests archive time (detection time plus offset) and the duration in seconds', () => {
-    const access = { urlTemplate: 'https://t/archive/get?path={channel}&start={start}&duration={duration}&format=fmp4', listUrlTemplate: null, offsetSeconds: 6 };
-    expect(footageUrl(access, 'ch4', { startMs: at('2026-10-21T21:53:10Z'), endMs: at('2026-10-21T21:53:29Z') }))
-      .toBe('https://t/archive/get?path=ch4&start=2026-10-21T21%3A53%3A16.000Z&duration=19&format=fmp4');
+  it('requests archive time (detection time plus the offset given) and the duration in seconds', () => {
+    const access = { urlTemplate: 'https://t/archive/get?path={channel}&start={start}&duration={duration}&format=fmp4', listUrlTemplate: null, offsetsUrl: null, offsetSeconds: 0.6 };
+    expect(footageUrl(access, 'ch4', { startMs: at('2026-10-21T21:53:10Z'), endMs: at('2026-10-21T21:53:29Z') }, 1.7))
+      .toBe('https://t/archive/get?path=ch4&start=2026-10-21T21%3A53%3A11.700Z&duration=19&format=fmp4');
   });
 });
 

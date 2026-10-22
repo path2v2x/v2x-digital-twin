@@ -7,6 +7,7 @@ import type { ArchiveAccess } from "../footage/archive";
 export const REPLAY_CONFIG_URL = "/detections/replay-config";
 export const DETECTION_HISTORY_URL = "/detections/history";
 export const DETECTION_EVENTS_URL = "/detections/events";
+export const DETECTION_ARCHIVE_OFFSETS_URL = "/detections/archive-offsets";
 
 export interface ReplayConfig {
   retentionHours: number;
@@ -29,10 +30,18 @@ export function parseReplayConfig(body: unknown): ReplayConfig {
   if (urlTemplate !== null && typeof urlTemplate !== "string") throw new Error("Replay config: invalid archive_url_template");
   if (listUrlTemplate !== null && typeof listUrlTemplate !== "string") throw new Error("Replay config: invalid archive_list_url_template");
   if (typeof georeference !== "string" || !georeference.startsWith("+proj=")) throw new Error("Replay config: invalid georeference");
+  const historyAvailable = value.history_available !== false;
   return {
     retentionHours,
-    historyAvailable: value.history_available !== false,
-    archive: urlTemplate ? { urlTemplate: devSameOrigin(urlTemplate), listUrlTemplate: listUrlTemplate && devSameOrigin(listUrlTemplate), offsetSeconds } : null,
+    historyAvailable,
+    archive: urlTemplate
+      ? {
+          urlTemplate: devSameOrigin(urlTemplate),
+          listUrlTemplate: listUrlTemplate && devSameOrigin(listUrlTemplate),
+          offsetsUrl: historyAvailable ? DETECTION_ARCHIVE_OFFSETS_URL : null,
+          offsetSeconds,
+        }
+      : null,
     georeference,
   };
 }

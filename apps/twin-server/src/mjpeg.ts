@@ -155,6 +155,11 @@ const DIRECT_SOCKET_RECONNECT_MS = 2_000;
  * 4-byte big-endian payload length, then the payload. */
 const DIRECT_SOCKET_HEADER_BYTES = 5;
 const MSG_ANNOTATED_FRAME = 1;
+/** Sent just before each annotated frame: channel (uint8), capture time (float64 epoch seconds, big-endian). */
+const MSG_FRAME_TIME = 4;
+
+/** An annotated frame from the co-perception socket: its capture time and when this server received it. */
+export type AnnotatedFrameListener = (camera: Channel, captureMs: number, receivedMs: number) => void;
 
 export class MjpegService {
   private readonly footage: string;
@@ -169,6 +174,9 @@ export class MjpegService {
   private directSocket: net.Socket | null = null;
   private directSocketBuffer: Buffer = Buffer.alloc(0);
   private directSocketRetryTimer: NodeJS.Timeout | null = null;
+  /** Capture time announced for the next annotated frame of each channel index. */
+  private readonly pendingCaptureMs = new Map<number, number>();
+  private readonly frameListeners: AnnotatedFrameListener[] = [];
 
   constructor(footage: string, fps: number, live: LiveFeedConfig | null = null) {
     this.footage = footage;
@@ -181,6 +189,10 @@ export class MjpegService {
     const out: Record<string, FeedMode> = {};
     for (const [channel, state] of this.channels) out[channel] = state.mode;
     return out;
+  }
+
+  onAnnotatedFrame(listener: AnnotatedFrameListener): void {
+    this.frameListeners.push(listener);
   }
 
   start(): void {
@@ -227,11 +239,11 @@ export class MjpegService {
   }
 
   /** Annotated frames (msg_type 1) carry a 1-byte channel index (0..3) then
-   * raw JPEG bytes. Other message types on this socket (raw frames,
-   * detections JSON) are present but not relevant to the live display, so
-   * they're skipped. A dropped/paused co-perception tick simply means no
-   * new message arrives -- the last frame stays on screen, frozen, rather
-   * than the feed disconnecting. */
+   * raw JPEG bytes, each preceded by a frame-time message (msg_type 4) with
+   * its capture time. Other message types on this socket (raw frames,
+   * detections JSON) are skipped. A dropped/paused co-perception tick simply
+   * means no new message arrives -- the last frame stays on screen, frozen,
+   * rather than the feed disconnecting. */
   private drainDirectSocketBuffer(): void {
     for (;;) {
       if (this.directSocketBuffer.length < DIRECT_SOCKET_HEADER_BYTES) return;
@@ -242,8 +254,11 @@ export class MjpegService {
       const payload = this.directSocketBuffer.subarray(DIRECT_SOCKET_HEADER_BYTES, totalLen);
       this.directSocketBuffer = this.directSocketBuffer.subarray(totalLen);
 
-      if (msgType === MSG_ANNOTATED_FRAME && payload.length >= 1) {
-        const channel = CHANNELS[payload.readUInt8(0)];
+      if (msgType === MSG_FRAME_TIME && payload.length >= 9) {
+        this.pendingCaptureMs.set(payload.readUInt8(0), payload.readDoubleBE(1) * 1_000);
+      } else if (msgType === MSG_ANNOTATED_FRAME && payload.length >= 1) {
+        const index = payload.readUInt8(0);
+        const channel = CHANNELS[index];
         const jpeg = payload.subarray(1);
         const state = channel ? this.channels.get(channel) : undefined;
         if (state) {
@@ -251,6 +266,9 @@ export class MjpegService {
           state.revision += 1;
           state.mode = 'live';
         }
+        const captureMs = this.pendingCaptureMs.get(index);
+        this.pendingCaptureMs.delete(index);
+        if (channel && captureMs !== undefined) for (const listener of this.frameListeners) listener(channel, captureMs, Date.now());
       }
     }
   }

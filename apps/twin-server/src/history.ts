@@ -59,6 +59,18 @@ export const EVENT_MERGE_GAP_MS = 5_000;
 /** A merged event shorter than this, first to last detection, is dropped. */
 export const EVENT_MIN_DURATION_MS = 2_000;
 
+/** A run of measured archive offsets ends when one deviates from its first by more than this. */
+export const OFFSET_RUN_TOLERANCE_MS = 50;
+/** A run of measured archive offsets ends at a gap in the measurements longer than this. */
+export const OFFSET_RUN_MAX_GAP_MS = 5_000;
+
+/** How far the recorded footage ran behind detection time over `[start, end)`. */
+export interface ArchiveOffsetRun {
+  readonly start: string;
+  readonly end: string;
+  readonly offset_seconds: number;
+}
+
 const EVENT_KINDS: Record<string, EventKind> = {
   person: 'pedestrian',
   pedestrian: 'pedestrian',
@@ -128,6 +140,9 @@ export class DetectionHistory {
   private readonly selectObjects: StatementSync;
   private readonly deleteDetections: StatementSync;
   private readonly deleteFrames: StatementSync;
+  private readonly insertOffset: StatementSync;
+  private readonly selectOffsets: StatementSync;
+  private readonly deleteOffsets: StatementSync;
 
   constructor(file: string, retentionHours = 72) {
     if (file !== ':memory:') mkdirSync(path.dirname(file), { recursive: true });
@@ -151,6 +166,12 @@ export class DetectionHistory {
         ts_ms INTEGER NOT NULL,
         PRIMARY KEY(camera, ts_ms)
       );
+      CREATE TABLE IF NOT EXISTS archive_offsets (
+        camera TEXT NOT NULL,
+        ts_ms INTEGER NOT NULL,
+        offset_ms INTEGER NOT NULL,
+        PRIMARY KEY(camera, ts_ms)
+      ) WITHOUT ROWID;
     `);
     this.insertFrame = this.db.prepare('INSERT OR IGNORE INTO frames(camera, ts_ms) VALUES (?, ?)');
     this.insertDetection = this.db.prepare(
@@ -200,6 +221,11 @@ export class DetectionHistory {
     `);
     this.deleteDetections = this.db.prepare('DELETE FROM detections WHERE ts_ms < ?');
     this.deleteFrames = this.db.prepare('DELETE FROM frames WHERE ts_ms < ?');
+    this.insertOffset = this.db.prepare('INSERT OR REPLACE INTO archive_offsets(camera, ts_ms, offset_ms) VALUES (?, ?, ?)');
+    this.selectOffsets = this.db.prepare(
+      'SELECT ts_ms, offset_ms FROM archive_offsets WHERE camera = ? AND ts_ms >= ? AND ts_ms < ? ORDER BY ts_ms',
+    );
+    this.deleteOffsets = this.db.prepare('DELETE FROM archive_offsets WHERE ts_ms < ?');
   }
 
   recordSummary(camera: string, tsSec: number, detections: readonly DetectionRecord[]): boolean {
@@ -233,6 +259,28 @@ export class DetectionHistory {
       this.db.exec('ROLLBACK');
       throw error;
     }
+  }
+
+  /** The archive offset measured for the frames `camera` captured in the second starting at `secondMs`. */
+  recordArchiveOffset(camera: string, secondMs: number, offsetMs: number): void {
+    this.insertOffset.run(camera, secondMs, Math.round(offsetMs));
+  }
+
+  /** Measured archive offsets of `camera` in `[startMs, endMs)`, merged into runs that stay within `OFFSET_RUN_TOLERANCE_MS`. */
+  archiveOffsets(camera: string, startMs: number, endMs: number): ArchiveOffsetRun[] {
+    const rows = this.selectOffsets.all(camera, startMs, endMs) as unknown as { ts_ms: number; offset_ms: number }[];
+    const runs: { startMs: number; lastMs: number; first: number; sum: number; count: number }[] = [];
+    for (const { ts_ms: tsMs, offset_ms: offsetMs } of rows) {
+      const run = runs.at(-1);
+      if (run && Math.abs(offsetMs - run.first) <= OFFSET_RUN_TOLERANCE_MS && tsMs - run.lastMs <= OFFSET_RUN_MAX_GAP_MS) {
+        run.lastMs = tsMs;
+        run.sum += offsetMs;
+        run.count += 1;
+      } else {
+        runs.push({ startMs: tsMs, lastMs: tsMs, first: offsetMs, sum: offsetMs, count: 1 });
+      }
+    }
+    return runs.map((run) => ({ start: iso(run.startMs), end: iso(run.lastMs + 1_000), offset_seconds: Math.round(run.sum / run.count) / 1_000 }));
   }
 
   range(startMs: number, endMs: number, limit: number): HistoryRange {
@@ -362,6 +410,7 @@ export class DetectionHistory {
     try {
       this.deleteDetections.run(cutoff);
       this.deleteFrames.run(cutoff);
+      this.deleteOffsets.run(cutoff);
       this.db.exec('COMMIT');
     } catch (error) {
       this.db.exec('ROLLBACK');
@@ -371,5 +420,32 @@ export class DetectionHistory {
 
   close(): void {
     this.db.close();
+  }
+}
+
+/**
+ * Measures how far the recorded footage runs behind detection time. The relay
+ * that publishes the annotated feed to MediaMTX stamps each frame when it
+ * receives it from co-perception, and so does this server (same broadcast
+ * socket), so a frame's archive offset is its arrival time minus its capture
+ * time. Each capture second's median is stored once the next second starts.
+ */
+export class ArchiveOffsetRecorder {
+  private readonly open = new Map<string, { secondMs: number; offsetsMs: number[] }>();
+
+  constructor(private readonly history: DetectionHistory) {}
+
+  add(camera: string, captureMs: number, receivedMs: number): void {
+    const secondMs = Math.floor(captureMs / 1_000) * 1_000;
+    const current = this.open.get(camera);
+    if (current?.secondMs === secondMs) {
+      current.offsetsMs.push(receivedMs - captureMs);
+      return;
+    }
+    if (current) {
+      const sorted = current.offsetsMs.sort((a, b) => a - b);
+      this.history.recordArchiveOffset(camera, current.secondMs, sorted[Math.floor(sorted.length / 2)]!);
+    }
+    this.open.set(camera, { secondMs, offsetsMs: [receivedMs - captureMs] });
   }
 }

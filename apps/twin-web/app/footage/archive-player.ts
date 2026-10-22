@@ -1,3 +1,4 @@
+import { ArchiveOffsets } from "./archive-offsets";
 import { avcCodecFromInit, DEFAULT_WINDOW_MS, footageUrl, windowAround, type ArchiveAccess } from "./archive";
 import type { TimeRange } from "../twin/camera-timeline";
 
@@ -13,6 +14,8 @@ const MAX_BUFFERED_MS = 240_000;
 const LOAD_SETTLE_MS = 120;
 /** The media timeline starts this far before now, so every archived instant maps to a positive media time. */
 const ORIGIN_LOOKBACK_MS = 4 * 24 * 3_600_000;
+/** A new camera loads its measured archive offsets for this long before now, the span the timelines show. */
+const OFFSETS_PREFETCH_MS = 60 * 60_000;
 /** A window that adds less footage than this means the archive has nothing further yet. */
 const MIN_PROGRESS_S = 0.5;
 
@@ -23,6 +26,8 @@ interface Session {
   readonly objectUrl: string;
   /** Media time 0 in detection-time milliseconds. */
   readonly originMs: number;
+  /** Each window is fetched at the archive offset measured at its start and placed on the detection-time timeline. */
+  readonly offsets: ArchiveOffsets;
   buffer: SourceBuffer | null;
 }
 
@@ -82,7 +87,13 @@ export class ArchivePlayer {
   /** Switch camera (or archive); returns true when a new, empty footage timeline was opened. */
   setSource(channel: string, access: ArchiveAccess): boolean {
     const current = this.session;
-    if (current && current.channel === channel && current.access.urlTemplate === access.urlTemplate && current.access.offsetSeconds === access.offsetSeconds) return false;
+    if (
+      current
+      && current.channel === channel
+      && current.access.urlTemplate === access.urlTemplate
+      && current.access.offsetsUrl === access.offsetsUrl
+      && current.access.offsetSeconds === access.offsetSeconds
+    ) return false;
     this.openSession(channel, access);
     return true;
   }
@@ -148,7 +159,8 @@ export class ArchivePlayer {
     this.load?.controller.abort();
     this.load = null;
     window.clearTimeout(this.settleTimer);
-    if (this.session) URL.revokeObjectURL(this.session.objectUrl);
+    const previous = this.session;
+    if (previous) URL.revokeObjectURL(previous.objectUrl);
     const scope = globalThis as { MediaSource?: typeof MediaSource; ManagedMediaSource?: typeof MediaSource };
     const MediaSourceImpl = scope.MediaSource ?? scope.ManagedMediaSource;
     if (!MediaSourceImpl) {
@@ -158,12 +170,18 @@ export class ArchivePlayer {
     }
     const media = new MediaSourceImpl();
     const objectUrl = URL.createObjectURL(media);
+    let offsets = previous?.channel === channel && previous.access === access ? previous.offsets : null;
+    if (!offsets) {
+      offsets = new ArchiveOffsets(access.offsetsUrl, channel, access.offsetSeconds);
+      offsets.prefetch(Date.now() - OFFSETS_PREFETCH_MS, Date.now());
+    }
     this.session = {
       channel,
       access,
       media,
       objectUrl,
       originMs: Math.floor((Date.now() - ORIGIN_LOOKBACK_MS) / 3_600_000) * 3_600_000,
+      offsets,
       buffer: null,
     };
     this.exhaustedAtMs = null;
@@ -237,13 +255,16 @@ export class ArchivePlayer {
     const { signal } = controller;
     if (signal.aborted) return;
     const { media } = session;
+    const offsetSeconds = session.offsets.at(span.startMs);
     if (media.readyState !== "open") {
       const { promise, resolve, reject } = Promise.withResolvers<void>();
       media.addEventListener("sourceopen", () => resolve(), { once: true });
       signal.addEventListener("abort", () => reject(signal.reason), { once: true });
       await promise;
     }
-    const response = await fetch(footageUrl(session.access, session.channel, span), { signal });
+    const url = footageUrl(session.access, session.channel, span, await offsetSeconds);
+    if (signal.aborted) return;
+    const response = await fetch(url, { signal });
     if (response.status === 404) {
       // MediaMTX answers 404 when the window starts where nothing was recorded.
       this.exhaustedAtMs = span.startMs;

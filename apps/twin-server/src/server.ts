@@ -7,6 +7,7 @@ import http from 'node:http';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { TwinConfig } from './config.js';
 import { DriveSession, type DriveDeps } from './drive.js';
+import { ArchiveOffsetRecorder } from './history.js';
 import { MjpegService } from './mjpeg.js';
 import { TwinConnection } from './twin.js';
 
@@ -123,6 +124,10 @@ export function startServers(deps: DriveDeps): TwinServers {
         }
       : null,
   );
+  if (sync.history) {
+    const recorder = new ArchiveOffsetRecorder(sync.history);
+    mjpeg.onAnnotatedFrame((camera, captureMs, receivedMs) => recorder.add(camera, captureMs, receivedMs));
+  }
   mjpeg.start();
   const httpServer = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
@@ -150,7 +155,8 @@ export function startServers(deps: DriveDeps): TwinServers {
       url.pathname === '/detections/coverage' ||
       url.pathname === '/detections/history' ||
       url.pathname === '/detections/objects' ||
-      url.pathname === '/detections/events'
+      url.pathname === '/detections/events' ||
+      url.pathname === '/detections/archive-offsets'
     ) {
       if (!sync.history) {
         jsonResponse(res, 503, { error: 'Detection history unavailable' });
@@ -182,6 +188,18 @@ export function startServers(deps: DriveDeps): TwinServers {
             start: new Date(startMs).toISOString(),
             end: new Date(endMs).toISOString(),
             events: sync.history.events(startMs, endMs),
+          });
+          return;
+        }
+        if (url.pathname === '/detections/archive-offsets') {
+          const camera = url.searchParams.get('camera');
+          if (!camera) throw new Error('camera is required');
+          if (endMs - startMs > MAX_EVENTS_RANGE_MS) throw new Error('archive-offsets range exceeds 24 hours');
+          jsonResponse(res, 200, {
+            camera,
+            start: new Date(startMs).toISOString(),
+            end: new Date(endMs).toISOString(),
+            runs: sync.history.archiveOffsets(camera, startMs, endMs),
           });
           return;
         }

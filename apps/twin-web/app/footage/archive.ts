@@ -1,12 +1,15 @@
 import type { TimeRange } from "../twin/camera-timeline";
 import type { DetectionEvent } from "../twin/detection-events";
 
-/** How to reach archived footage; all instants in the UI are detection time, the archive runs `offsetSeconds` later. */
+/** How to reach archived footage; all instants in the UI are detection time, the archive runs behind it by an offset. */
 export interface ArchiveAccess {
   /** MediaMTX `/get` template with `{channel}`, `{start}` and `{duration}`; must request `format=fmp4`. */
   urlTemplate: string;
   /** MediaMTX `/list` template with `{channel}`, `{start}` and `{end}`. */
   listUrlTemplate: string | null;
+  /** The twin server's measured archive offsets, or null when it keeps no history. */
+  offsetsUrl: string | null;
+  /** Offset for instants the twin server did not measure. */
   offsetSeconds: number;
 }
 
@@ -37,10 +40,11 @@ function archiveIso(ms: number, offsetSeconds: number): string {
   return encodeURIComponent(new Date(ms + offsetSeconds * SECOND).toISOString());
 }
 
-export function footageUrl(access: ArchiveAccess, channel: string, window: TimeRange): string {
+/** `window` of `channel`, from an archive running `offsetSeconds` behind detection time. */
+export function footageUrl(access: ArchiveAccess, channel: string, window: TimeRange, offsetSeconds: number): string {
   return access.urlTemplate
     .replaceAll("{channel}", encodeURIComponent(channel))
-    .replaceAll("{start}", archiveIso(window.startMs, access.offsetSeconds))
+    .replaceAll("{start}", archiveIso(window.startMs, offsetSeconds))
     .replaceAll("{duration}", String(Math.max(1, Math.round((window.endMs - window.startMs) / SECOND))));
 }
 

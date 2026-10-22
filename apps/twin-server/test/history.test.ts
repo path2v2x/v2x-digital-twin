@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { DetectionRecord } from '../src/ghosts.js';
-import { DetectionHistory } from '../src/history.js';
+import { ArchiveOffsetRecorder, DetectionHistory } from '../src/history.js';
 
 let stores: DetectionHistory[] = [];
 
@@ -103,6 +103,28 @@ describe('DetectionHistory', () => {
         cameras: [{ camera: 'ch4', detections: 6 }],
       },
     ]);
+  });
+
+  it('stores each capture second as its median archive offset and merges steady seconds into runs', () => {
+    const store = history();
+    const recorder = new ArchiveOffsetRecorder(store);
+    const baseMs = 1_756_000_000_000;
+    const frame = (atMs: number, offsetMs: number) => recorder.add('ch1', baseMs + atMs, baseMs + atMs + offsetMs);
+    // Seconds 0-2 hover around 1.2 s (one late frame does not move the median); 3-4 drop to 0.4 s.
+    for (const [atMs, offsetMs] of [[0, 1_200], [100, 1_900], [200, 1_210], [1_000, 1_230], [2_000, 1_190], [3_000, 400], [4_000, 420]] as const) {
+      frame(atMs, offsetMs);
+    }
+    // After a 10 s gap the next measurement starts a new run even at the same offset.
+    frame(15_000, 410);
+    frame(16_000, 0);
+
+    const iso = (ms: number) => new Date(baseMs + ms).toISOString();
+    expect(store.archiveOffsets('ch1', baseMs, baseMs + 60_000)).toEqual([
+      { start: iso(0), end: iso(3_000), offset_seconds: 1.21 },
+      { start: iso(3_000), end: iso(5_000), offset_seconds: 0.41 },
+      { start: iso(15_000), end: iso(16_000), offset_seconds: 0.41 },
+    ]);
+    expect(store.archiveOffsets('ch2', baseMs, baseMs + 60_000)).toEqual([]);
   });
 
   it('summarises objects newest-last-seen first with their latest position', () => {
