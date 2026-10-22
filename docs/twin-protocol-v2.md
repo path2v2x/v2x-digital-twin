@@ -161,12 +161,12 @@ detection routes return JSON errors with HTTP 400 for invalid parameters.
 hours) returns `{camera,start,end,runs}` with runs `{start,end,offset_seconds}`
 ordered by start: how far the recorded annotated footage ran behind detection
 time. The relay publishing the annotated feed stamps each frame when it
-receives it from co-perception, so the offset is co-perception's latency, which
-changes with its load. The server measures it on every annotated frame of the
-co-perception socket (arrival time minus the capture time sent just before the
-frame), stores each capture second's median per camera, and merges consecutive
-seconds within 50 ms of a run's first second into one run; a gap of more than
-5 s in the measurements ends a run.
+receives it from co-perception, so the offset is co-perception's latency. The
+server measures it on every annotated frame of the co-perception socket
+(arrival time minus the capture time sent just before the frame), stores each
+capture second's median per camera, and merges consecutive seconds within
+100 ms of a run's first second (the relay stamps frames in 0.1 s steps) into one
+run; a gap of more than 5 s in the measurements ends a run.
 
 `GET /detections/replay-config` returns
 `{retention_hours, history_available, archive_url_template,

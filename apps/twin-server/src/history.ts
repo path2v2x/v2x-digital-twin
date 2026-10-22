@@ -59,8 +59,8 @@ export const EVENT_MERGE_GAP_MS = 5_000;
 /** A merged event shorter than this, first to last detection, is dropped. */
 export const EVENT_MIN_DURATION_MS = 2_000;
 
-/** A run of measured archive offsets ends when one deviates from its first by more than this. */
-export const OFFSET_RUN_TOLERANCE_MS = 50;
+/** A run of measured archive offsets ends when one deviates from its first by more than this: the relay stamps frames in 0.1 s steps. */
+export const OFFSET_RUN_TOLERANCE_MS = 100;
 /** A run of measured archive offsets ends at a gap in the measurements longer than this. */
 export const OFFSET_RUN_MAX_GAP_MS = 5_000;
 
