@@ -5,7 +5,7 @@ import { VideoOff } from "lucide-react";
 import type { PoleCamera } from "@simforge-oss/maps/camera-rig";
 
 import { cn } from "@/app/lib/utils";
-import type { ArchiveAccess } from "../footage/archive";
+import { DEFAULT_WINDOW_MS, windowAround, type ArchiveAccess } from "../footage/archive";
 import { ArchivePlayer, type FootageStatus } from "../footage/archive-player";
 
 export type FeedDisplayState = "starting" | "replay" | "paused" | "no-recording";
@@ -77,17 +77,17 @@ function ArchiveFeed({ camera, clock, archive, onDisplayState }: { camera: PoleC
   }, [speed]);
 
   // Held: show the clock's instant. Playing: the footage runs on its own and is only re-aligned when it drifts.
+  // The twin settles scrubbed clocks before they reach the tiles, so every request loads its window at once.
   useEffect(() => {
     const player = playerRef.current;
     if (!player || !Number.isFinite(timeMs)) return;
     if (speed === 0) {
-      const startMs = Math.floor(timeMs / 1_000) * 1_000;
-      player.show(timeMs, prefetch ? undefined : { startMs, endMs: startMs + HELD_WINDOW_MS });
+      player.show(timeMs, windowAround(timeMs, prefetch ? DEFAULT_WINDOW_MS : HELD_WINDOW_MS));
       return;
     }
     // Also keeps the next footage loading ahead; null while a jump is still loading.
     const shownMs = player.tick().ms;
-    if (shownMs !== null && Math.abs(shownMs - timeMs) > DRIFT_LIMIT_MS) player.show(timeMs);
+    if (shownMs !== null && Math.abs(shownMs - timeMs) > DRIFT_LIMIT_MS) player.show(timeMs, windowAround(timeMs));
   }, [archive, camera.id, prefetch, speed, timeMs]);
 
   const displayState: FeedDisplayState = status === "loading" ? "starting" : status === "ready" ? (speed === 0 ? "paused" : "replay") : "no-recording";

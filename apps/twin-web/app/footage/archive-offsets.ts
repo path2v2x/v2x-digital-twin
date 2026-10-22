@@ -41,9 +41,9 @@ export function measuredOffsetAt(runs: readonly OffsetRun[], ms: number): number
 }
 
 /**
- * The archive offsets of one camera. The co-perception pipeline's latency
- * changes with load (0 to 5 s observed), so the twin server measures it per
- * second; instants it did not measure use the configured offset.
+ * How far one camera's recorded footage runs behind detection time, as the
+ * twin server measured it per second; instants it did not measure use the
+ * configured offset.
  */
 export class ArchiveOffsets {
   private readonly loads: { span: TimeRange; runs: Promise<readonly OffsetRun[]> }[] = [];
@@ -86,4 +86,20 @@ export class ArchiveOffsets {
     this.loads.push(load);
     return load;
   }
+}
+
+/** A new camera loads its measured offsets for this long before now, the span the timelines show. */
+const PREFETCH_MS = 60 * 60_000;
+const shared = new Map<string, ArchiveOffsets>();
+
+/** The offsets of `camera`, shared by every player showing it so a newly opened view does not wait for them. */
+export function archiveOffsetsFor(url: string | null, camera: string, configuredSeconds: number): ArchiveOffsets {
+  const key = `${url}\n${camera}\n${configuredSeconds}`;
+  let offsets = shared.get(key);
+  if (!offsets) {
+    offsets = new ArchiveOffsets(url, camera, configuredSeconds);
+    offsets.prefetch(Date.now() - PREFETCH_MS, Date.now());
+    shared.set(key, offsets);
+  }
+  return offsets;
 }

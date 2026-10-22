@@ -1,4 +1,4 @@
-import { ArchiveOffsets } from "./archive-offsets";
+import { archiveOffsetsFor, type ArchiveOffsets } from "./archive-offsets";
 import { avcCodecFromInit, DEFAULT_WINDOW_MS, footageUrl, windowAround, type ArchiveAccess } from "./archive";
 import type { TimeRange } from "../twin/camera-timeline";
 
@@ -14,8 +14,6 @@ const MAX_BUFFERED_MS = 240_000;
 const LOAD_SETTLE_MS = 120;
 /** The media timeline starts this far before now, so every archived instant maps to a positive media time. */
 const ORIGIN_LOOKBACK_MS = 4 * 24 * 3_600_000;
-/** A new camera loads its measured archive offsets for this long before now, the span the timelines show. */
-const OFFSETS_PREFETCH_MS = 60 * 60_000;
 /** A window that adds less footage than this means the archive has nothing further yet. */
 const MIN_PROGRESS_S = 0.5;
 
@@ -159,8 +157,7 @@ export class ArchivePlayer {
     this.load?.controller.abort();
     this.load = null;
     window.clearTimeout(this.settleTimer);
-    const previous = this.session;
-    if (previous) URL.revokeObjectURL(previous.objectUrl);
+    if (this.session) URL.revokeObjectURL(this.session.objectUrl);
     const scope = globalThis as { MediaSource?: typeof MediaSource; ManagedMediaSource?: typeof MediaSource };
     const MediaSourceImpl = scope.MediaSource ?? scope.ManagedMediaSource;
     if (!MediaSourceImpl) {
@@ -170,18 +167,13 @@ export class ArchivePlayer {
     }
     const media = new MediaSourceImpl();
     const objectUrl = URL.createObjectURL(media);
-    let offsets = previous?.channel === channel && previous.access === access ? previous.offsets : null;
-    if (!offsets) {
-      offsets = new ArchiveOffsets(access.offsetsUrl, channel, access.offsetSeconds);
-      offsets.prefetch(Date.now() - OFFSETS_PREFETCH_MS, Date.now());
-    }
     this.session = {
       channel,
       access,
       media,
       objectUrl,
       originMs: Math.floor((Date.now() - ORIGIN_LOOKBACK_MS) / 3_600_000) * 3_600_000,
-      offsets,
+      offsets: archiveOffsetsFor(access.offsetsUrl, channel, access.offsetSeconds),
       buffer: null,
     };
     this.exhaustedAtMs = null;
