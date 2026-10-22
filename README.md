@@ -133,12 +133,12 @@ TWIN_HISTORY_RETENTION_HOURS=72
 TWIN_PUBLIC_HTTP_ORIGIN=https://twin.path2v2x.net
 TWIN_ARCHIVE_URL_TEMPLATE=https://twin.path2v2x.net/archive/get?path={channel}&start={start}&duration={duration}&format=fmp4
 TWIN_ARCHIVE_LIST_URL_TEMPLATE=https://twin.path2v2x.net/archive/list?path={channel}&start={start}&end={end}
-TWIN_ARCHIVE_OFFSET_SECONDS=6
+TWIN_ARCHIVE_OFFSET_SECONDS=4.3
 TWIN_CAMERA_URL_TEMPLATE=rtsp://127.0.0.1:8554/{channel}
 TWIN_CAMERA_SOCKET_PATH=/tmp/coperception_output.sock
 ```
 
-The recorded (annotated) streams are timestamped when a frame reaches the relay, after co-perception has processed it, so footage runs about 6 s behind detection timestamps. `TWIN_ARCHIVE_OFFSET_SECONDS=6` was measured by matching the burned-in boxes against detection history (6 s median over 10 events, 6–8 s typical); re-measure it if the pipeline latency changes.
+The recorded (annotated) streams are timestamped when a frame reaches the relay, after co-perception has processed it, so footage runs behind detection timestamps. Each annotated frame carries its capture time burned in at the top right, in the same timebase as detection history (frames inside a detection event read `Detections: 1`). `TWIN_ARCHIVE_OFFSET_SECONDS=4.3` is the archive time minus that burned-in clock, measured on 2026-10-21 over two samples: ch1 4.7 s, ch2 3.9 s, ch3 4.1 s, ch4 4.5 s. Re-measure it the same way if the pipeline latency changes.
 
 ### Deploying
 
